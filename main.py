@@ -6,10 +6,14 @@ from datetime import date
 from typing import Any
 
 import mysql.connector
+from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from emails import send_project_member_added_email
+
 app = FastAPI(title="Codex Activity App")
+load_dotenv()
 
 
 MENU = [("Home", "/"), ("Projects", "/projects"), ("Members", "/members"), ("Organization", "/organizations")]
@@ -805,10 +809,47 @@ def delete_members(member_ids: list[int] = Form(default=[])) -> RedirectResponse
 @app.post("/projects/{project_id}/members")
 def add_member_to_project(project_id: int, member_id: int = Form(...)) -> RedirectResponse:
     ensure_schema()
-    execute(
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
         "INSERT IGNORE INTO project_members (project_id, member_id) VALUES (%s, %s)",
         (project_id, member_id),
     )
+    inserted = cursor.rowcount > 0
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    if inserted:
+        project = fetch_one(
+            """
+            SELECT p.name, o.name AS organization_name
+            FROM projects p
+            LEFT JOIN organizations o ON o.id = p.organization_id
+            WHERE p.id = %s
+            """,
+            (project_id,),
+        )
+        member = fetch_one(
+            "SELECT first_name, middle_name, last_name, email FROM members WHERE id = %s",
+            (member_id,),
+        )
+
+        if project and member and member.get("email"):
+            member_name = " ".join(
+                part for part in [member["first_name"], member.get("middle_name") or "", member["last_name"]] if part
+            )
+            try:
+                send_project_member_added_email(
+                    to_email=member["email"],
+                    member_name=member_name,
+                    project_name=project["name"],
+                    organization_name=project.get("organization_name"),
+                )
+            except Exception:
+                pass
+
     return RedirectResponse(url=f"/projects/{project_id}", status_code=303)
 
 

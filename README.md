@@ -67,7 +67,37 @@ export DB_PASSWORD=codex_password
 export DB_NAME=codex_activity
 ```
 
-## 4) Run locally
+## 4) Configure `.env` (including SMTP)
+
+The app loads environment variables from a `.env` file at startup.
+
+Example `.env`:
+
+```dotenv
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_USER=codex_app
+DB_PASSWORD=codex_password
+DB_NAME=codex_activity
+
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=your_smtp_user
+SMTP_PASSWORD=your_smtp_password
+SMTP_FROM=no-reply@example.com
+SMTP_USE_TLS=true
+```
+
+SMTP variables are used when adding a member to a project:
+
+- `SMTP_HOST` (required to enable email sending)
+- `SMTP_PORT` (default `587`)
+- `SMTP_USER` (optional)
+- `SMTP_PASSWORD` (optional)
+- `SMTP_FROM` (required to enable email sending)
+- `SMTP_USE_TLS` (`true`/`false`, default `true`)
+
+## 5) Run locally
 
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000
