@@ -38,13 +38,21 @@ def ensure_schema() -> None:
         CREATE TABLE IF NOT EXISTS members (
             id INT AUTO_INCREMENT PRIMARY KEY,
             first_name VARCHAR(100) NOT NULL,
-            middle_name VARCHAR(100) NOT NULL,
+            middle_name VARCHAR(100) NULL,
             last_name VARCHAR(100) NOT NULL,
-            phone VARCHAR(50) NOT NULL,
+            phone VARCHAR(50) NULL,
             email VARCHAR(255) NOT NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """
     )
+    cursor.execute(
+        """
+        ALTER TABLE members
+        MODIFY middle_name VARCHAR(100) NULL,
+        MODIFY phone VARCHAR(50) NULL
+        """
+    )
+
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS project_members (
@@ -268,9 +276,9 @@ def members_page() -> HTMLResponse:
         <tr>
           <td><input type='checkbox' name='member_ids' value='{member['id']}' /></td>
           <td><a href='/members/{member['id']}'>{html.escape(str(member['first_name']))}</a></td>
-          <td>{html.escape(str(member['middle_name']))}</td>
+          <td>{html.escape(str(member['middle_name'] or ''))}</td>
           <td>{html.escape(str(member['last_name']))}</td>
-          <td>{html.escape(str(member['phone']))}</td>
+          <td>{html.escape(str(member['phone'] or ''))}</td>
           <td>{html.escape(str(member['email']))}</td>
         </tr>
         """
@@ -311,9 +319,9 @@ def members_page() -> HTMLResponse:
           <div class='dialog-body'>
             <h2>Create New Member</h2>
             <div class='field'><label>First-name</label><input name='first_name' maxlength='100' required /></div>
-            <div class='field'><label>Middle-name</label><input name='middle_name' maxlength='100' required /></div>
+            <div class='field'><label>Middle-name (optional)</label><input name='middle_name' maxlength='100' /></div>
             <div class='field'><label>Last-name</label><input name='last_name' maxlength='100' required /></div>
-            <div class='field'><label>Phone</label><input name='phone' maxlength='50' required /></div>
+            <div class='field'><label>Phone (optional)</label><input name='phone' maxlength='50' /></div>
             <div class='field'><label>Email</label><input name='email' maxlength='255' required /></div>
             <div class='dialog-actions'>
               <button type='button' class='btn-secondary' onclick=\"closeDialog('addMemberDialog')\">Cancel</button>
@@ -355,14 +363,14 @@ def project_detail(project_id: int) -> HTMLResponse:
         (project_id,),
     )
     member_rows = "".join(
-        f"<tr><td><a href='/members/{m['id']}'>{html.escape(m['first_name'])} {html.escape(m['middle_name'])} {html.escape(m['last_name'])}</a></td><td>{html.escape(m['email'])}</td></tr>"
+        f"<tr><td><a href='/members/{m['id']}'>{html.escape(m['first_name'])} {html.escape(m['middle_name'] or '')} {html.escape(m['last_name'])}</a></td><td>{html.escape(m['email'])}</td></tr>"
         for m in project_members
     )
     if not member_rows:
         member_rows = "<tr><td colspan='2' class='empty-row'>No members assigned.</td></tr>"
 
     options = "".join(
-        f"<option value='{m['id']}'>{html.escape(m['first_name'])} {html.escape(m['middle_name'])} {html.escape(m['last_name'])}</option>"
+        f"<option value='{m['id']}'>{html.escape(m['first_name'])} {html.escape(m['middle_name'] or '')} {html.escape(m['last_name'])}</option>"
         for m in available_members
     )
     selector = (
@@ -442,16 +450,16 @@ def member_detail(member_id: int) -> HTMLResponse:
     body = f"""
       <div class='header'>
         <div>
-          <h1 class='title'>Member: {html.escape(member['first_name'])} {html.escape(member['middle_name'])} {html.escape(member['last_name'])}</h1>
+          <h1 class='title'>Member: {html.escape(member['first_name'])} {html.escape(member['middle_name'] or '')} {html.escape(member['last_name'])}</h1>
           <div class='subtitle'>Member detail</div>
         </div>
       </div>
       <div class='details'>
         <div class='detail-grid'>
           <div class='detail-label'>First-name</div><div>{html.escape(member['first_name'])}</div>
-          <div class='detail-label'>Middle-name</div><div>{html.escape(member['middle_name'])}</div>
+          <div class='detail-label'>Middle-name</div><div>{html.escape(member['middle_name'] or '')}</div>
           <div class='detail-label'>Last-name</div><div>{html.escape(member['last_name'])}</div>
-          <div class='detail-label'>Phone</div><div>{html.escape(member['phone'])}</div>
+          <div class='detail-label'>Phone</div><div>{html.escape(member['phone'] or '')}</div>
           <div class='detail-label'>Email</div><div>{html.escape(member['email'])}</div>
         </div>
       </div>
@@ -488,15 +496,15 @@ def delete_projects(project_ids: list[int] = Form(default=[])) -> RedirectRespon
 @app.post("/members")
 def create_member(
     first_name: str = Form(...),
-    middle_name: str = Form(...),
+    middle_name: str = Form(""),
     last_name: str = Form(...),
-    phone: str = Form(...),
+    phone: str = Form(""),
     email: str = Form(...),
 ) -> RedirectResponse:
     ensure_schema()
     execute(
         "INSERT INTO members (first_name, middle_name, last_name, phone, email) VALUES (%s, %s, %s, %s, %s)",
-        (first_name.strip(), middle_name.strip(), last_name.strip(), phone.strip(), email.strip()),
+        (first_name.strip(), middle_name.strip() or None, last_name.strip(), phone.strip() or None, email.strip()),
     )
     return RedirectResponse(url="/members", status_code=303)
 

@@ -11,7 +11,7 @@ A business-style FastAPI web app served by uvicorn with MySQL persistence.
   - **Delete Selected** action
   - clickable project entries to project detail pages
 - Members page (`/members`) with:
-  - table columns **First-name**, **Middle-name**, **Last-name**, **Phone**, **Email**
+  - table columns **First-name**, **Middle-name** (optional), **Last-name**, **Phone** (optional), **Email**
   - **Add Member** dialog
   - **Delete Selected** action
   - clickable member entries to member detail pages
