@@ -13,6 +13,7 @@ A business-style FastAPI web app served by uvicorn with MySQL persistence.
 - Members page (`/members`) with:
   - table columns **First-name**, **Middle-name** (optional), **Last-name**, **Phone** (optional), **Email**
   - **Add Member** dialog
+  - **Import CSV** button/dialog for CSV with columns `First-name,Middle-name,Last-name,Phone,Email`
   - **Delete Selected** action
   - clickable member entries to member detail pages
 - Organization page (`/organizations`) with:

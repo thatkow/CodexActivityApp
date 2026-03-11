@@ -1,10 +1,12 @@
+import csv
 import html
 import os
+import io
 from datetime import date
 from typing import Any
 
 import mysql.connector
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 app = FastAPI(title="Codex Activity App")
@@ -387,6 +389,7 @@ def members_page() -> HTMLResponse:
         <div><h1 class='title'>Members</h1><div class='subtitle'>Directory of project members</div></div>
         <div class='actions'>
           <button class='btn-primary' type='button' onclick=\"openDialog('addMemberDialog')\">Add Member</button>
+          <button class='btn-primary' type='button' onclick=\"openDialog('importMembersDialog')\">Import CSV</button>
           <button class='btn-danger' type='submit' form='deleteMembersForm'>Delete Selected</button>
         </div>
       </div>
@@ -408,6 +411,20 @@ def members_page() -> HTMLResponse:
             <div class='field'><label>Phone (optional)</label><input name='phone' maxlength='50' /></div>
             <div class='field'><label>Email</label><input name='email' maxlength='255' required /></div>
             <div class='dialog-actions'><button type='button' class='btn-secondary' onclick=\"closeDialog('addMemberDialog')\">Cancel</button><button type='submit' class='btn-primary'>Save Member</button></div>
+          </div>
+        </form>
+      </dialog>
+    
+      <dialog id='importMembersDialog'>
+        <form method='post' action='/members/import_csv' enctype='multipart/form-data'>
+          <div class='dialog-body'>
+            <h2>Import Members from CSV</h2>
+            <p style='color:#6b7280; margin-top:0;'>Expected columns: First-name, Middle-name, Last-name, Phone, Email</p>
+            <div class='field'><label>CSV File</label><input type='file' name='csv_file' accept='.csv,text/csv' required /></div>
+            <div class='dialog-actions'>
+              <button type='button' class='btn-secondary' onclick="closeDialog('importMembersDialog')">Cancel</button>
+              <button type='submit' class='btn-primary'>Import</button>
+            </div>
           </div>
         </form>
       </dialog>
@@ -733,6 +750,46 @@ def create_member(
         "INSERT INTO members (first_name, middle_name, last_name, phone, email) VALUES (%s, %s, %s, %s, %s)",
         (first_name.strip(), middle_name.strip() or None, last_name.strip(), phone.strip() or None, email.strip()),
     )
+    return RedirectResponse(url="/members", status_code=303)
+
+
+
+
+@app.post("/members/import_csv")
+async def import_members_csv(csv_file: UploadFile = File(...)) -> RedirectResponse:
+    ensure_schema()
+    content = await csv_file.read()
+    text_stream = io.StringIO(content.decode("utf-8-sig"))
+    reader = csv.DictReader(text_stream)
+
+    if not reader.fieldnames:
+        return RedirectResponse(url="/members", status_code=303)
+
+    normalized = {name.strip().lower(): name for name in reader.fieldnames if name}
+    required = ["first-name", "middle-name", "last-name", "phone", "email"]
+    if any(col not in normalized for col in required):
+        return RedirectResponse(url="/members", status_code=303)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    for row in reader:
+        first_name = (row.get(normalized["first-name"]) or "").strip()
+        last_name = (row.get(normalized["last-name"]) or "").strip()
+        email = (row.get(normalized["email"]) or "").strip()
+        middle_name = (row.get(normalized["middle-name"]) or "").strip() or None
+        phone = (row.get(normalized["phone"]) or "").strip() or None
+
+        if not first_name or not last_name or not email:
+            continue
+
+        cursor.execute(
+            "INSERT INTO members (first_name, middle_name, last_name, phone, email) VALUES (%s, %s, %s, %s, %s)",
+            (first_name, middle_name, last_name, phone, email),
+        )
+
+    conn.commit()
+    cursor.close()
+    conn.close()
     return RedirectResponse(url="/members", status_code=303)
 
 
