@@ -430,27 +430,51 @@ def project_detail(project_id: int) -> HTMLResponse:
     if not project:
         return HTMLResponse("Project not found", status_code=404)
 
-    project_members = fetch_all(
-        """
-        SELECT m.id, m.first_name, m.middle_name, m.last_name, m.email
-        FROM project_members pm JOIN members m ON m.id = pm.member_id
-        WHERE pm.project_id = %s ORDER BY m.first_name, m.last_name
-        """,
-        (project_id,),
-    )
-    available_members = fetch_all(
-        """
-        SELECT m.id, m.first_name, m.middle_name, m.last_name
-        FROM members m
-        WHERE m.id NOT IN (SELECT member_id FROM project_members WHERE project_id = %s)
-        ORDER BY m.first_name, m.last_name
-        """,
-        (project_id,),
-    )
+    if project["organization_id"]:
+        project_members = fetch_all(
+            """
+            SELECT m.id, m.first_name, m.middle_name, m.last_name, m.email
+            FROM project_members pm
+            JOIN members m ON m.id = pm.member_id
+            JOIN organization_members om ON om.member_id = m.id
+            WHERE pm.project_id = %s AND om.organization_id = %s
+            ORDER BY m.first_name, m.last_name
+            """,
+            (project_id, project["organization_id"]),
+        )
+        available_members = fetch_all(
+            """
+            SELECT m.id, m.first_name, m.middle_name, m.last_name
+            FROM members m
+            JOIN organization_members om ON om.member_id = m.id
+            WHERE om.organization_id = %s
+              AND m.id NOT IN (SELECT member_id FROM project_members WHERE project_id = %s)
+            ORDER BY m.first_name, m.last_name
+            """,
+            (project["organization_id"], project_id),
+        )
+    else:
+        project_members = fetch_all(
+            """
+            SELECT m.id, m.first_name, m.middle_name, m.last_name, m.email
+            FROM project_members pm JOIN members m ON m.id = pm.member_id
+            WHERE pm.project_id = %s ORDER BY m.first_name, m.last_name
+            """,
+            (project_id,),
+        )
+        available_members = fetch_all(
+            """
+            SELECT m.id, m.first_name, m.middle_name, m.last_name
+            FROM members m
+            WHERE m.id NOT IN (SELECT member_id FROM project_members WHERE project_id = %s)
+            ORDER BY m.first_name, m.last_name
+            """,
+            (project_id,),
+        )
     member_rows = "".join(
         f"<tr><td><a href='/members/{m['id']}'>{html.escape(m['first_name'])} {html.escape(m['middle_name'] or '')} {html.escape(m['last_name'])}</a></td><td>{html.escape(m['email'])}</td></tr>"
         for m in project_members
-    ) or "<tr><td colspan='2' class='empty-row'>No members assigned.</td></tr>"
+    ) or "<tr><td colspan='2' class='empty-row'>No eligible members assigned for this project's organization.</td></tr>"
     options = "".join(
         f"<option value='{m['id']}'>{html.escape(m['first_name'])} {html.escape(m['middle_name'] or '')} {html.escape(m['last_name'])}</option>"
         for m in available_members
@@ -460,7 +484,7 @@ def project_detail(project_id: int) -> HTMLResponse:
         <div class='field'><label>Add Member (lookup)</label><select name='member_id' required><option value=''>Choose member</option>{options}</select></div>
         <button class='btn-primary' type='submit'>Add Member</button>
       </form>
-    """ if available_members else "<div style='padding:0 24px 14px; color:#6b7280;'>All members are already assigned or no members exist.</div>"
+    """ if available_members else "<div style='padding:0 24px 14px; color:#6b7280;'>All eligible members are already assigned or no eligible members exist.</div>"
 
     org_text = (
         f"<a href='/organizations/{project['organization_id']}'>{html.escape(str(project['organization_name']))}</a>"
