@@ -11,11 +11,13 @@ UVICORN_PID=""
 
 stop_uvicorn() {
   if [[ -n "${UVICORN_PID}" ]] && kill -0 "${UVICORN_PID}" 2>/dev/null; then
-    echo "Stopping uvicorn (PID ${UVICORN_PID})"
+    echo "Stopping managed uvicorn (PID ${UVICORN_PID})"
     kill "${UVICORN_PID}" 2>/dev/null || true
     wait "${UVICORN_PID}" 2>/dev/null || true
   fi
 
+  # Ensure any other uvicorn for this app is stopped before restart.
+  pkill -f "uvicorn ${APP_MODULE}" 2>/dev/null || true
   UVICORN_PID=""
 }
 
@@ -50,6 +52,7 @@ if ! command -v uvicorn >/dev/null 2>&1; then
   exit 1
 fi
 
+stop_uvicorn
 start_uvicorn
 last_head="$(git rev-parse HEAD)"
 
@@ -66,5 +69,4 @@ while true; do
     start_uvicorn
     last_head="${current_head}"
   fi
-
 done
