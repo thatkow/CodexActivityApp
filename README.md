@@ -6,8 +6,8 @@ A business-style FastAPI web app served by uvicorn with MySQL persistence.
 
 - Landing page (`/`) with navigation tiles.
 - Projects page (`/projects`) with:
-  - table columns **Name**, **Description**, **Date Created**
-  - **Add Project** dialog
+  - table columns **Name**, **Description**, **Organization**, **Date Created**
+  - **Add Project** dialog (including organization selection)
   - **Delete Selected** action
   - clickable project entries to project detail pages
 - Members page (`/members`) with:
@@ -15,8 +15,17 @@ A business-style FastAPI web app served by uvicorn with MySQL persistence.
   - **Add Member** dialog
   - **Delete Selected** action
   - clickable member entries to member detail pages
-- Project detail page (`/projects/{id}`) showing project fields plus members, and a lookup to add members to the project.
-- Member detail page (`/members/{id}`) showing member fields and a table of projects the member belongs to.
+- Organization page (`/organizations`) with:
+  - table columns **Name**, **Address** (optional), **ABN** (optional)
+  - **Add Organization** dialog
+  - **Delete Selected** action
+  - clickable organization entries to organization detail pages
+- Organization detail page (`/organizations/{id}`):
+  - create a project directly in that organization (auto-assigned association)
+  - view organization projects
+  - add members to organization (many-to-many lookup)
+- Project detail page (`/projects/{id}`) showing project fields including organization and project members.
+- Member detail page (`/members/{id}`) showing member fields, projects, and associated organizations.
 
 ## 1) Create MySQL database and user
 
