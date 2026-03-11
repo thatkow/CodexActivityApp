@@ -52,15 +52,40 @@ def ensure_schema() -> None:
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """
     )
-    cursor.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS organization_id INT NULL")
+    db_name = os.getenv("DB_NAME", "codex_activity")
     cursor.execute(
         """
-        ALTER TABLE projects
-        ADD CONSTRAINT IF NOT EXISTS fk_projects_organization
-        FOREIGN KEY (organization_id) REFERENCES organizations(id)
-        ON DELETE SET NULL
-        """
+        SELECT COUNT(*)
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'projects' AND COLUMN_NAME = 'organization_id'
+        """,
+        (db_name,),
     )
+    has_org_column = cursor.fetchone()[0] > 0
+    if not has_org_column:
+        cursor.execute("ALTER TABLE projects ADD COLUMN organization_id INT NULL")
+
+    cursor.execute(
+        """
+        SELECT COUNT(*)
+        FROM information_schema.KEY_COLUMN_USAGE
+        WHERE TABLE_SCHEMA = %s
+          AND TABLE_NAME = 'projects'
+          AND COLUMN_NAME = 'organization_id'
+          AND REFERENCED_TABLE_NAME = 'organizations'
+        """,
+        (db_name,),
+    )
+    has_org_fk = cursor.fetchone()[0] > 0
+    if not has_org_fk:
+        cursor.execute(
+            """
+            ALTER TABLE projects
+            ADD CONSTRAINT fk_projects_organization
+            FOREIGN KEY (organization_id) REFERENCES organizations(id)
+            ON DELETE SET NULL
+            """
+        )
 
     cursor.execute(
         """
