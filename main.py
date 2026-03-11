@@ -541,13 +541,24 @@ def organization_detail(organization_id: int) -> HTMLResponse:
           <div class='detail-label'>ABN</div><div>{html.escape(str(org['abn'] or ''))}</div>
         </div>
       </div>
-      <div class='header' style='padding-top:0;'><div><h2 class='title' style='font-size:1.1rem;'>Create Project in this Organization</h2></div></div>
-      <form method='post' action='/organizations/{organization_id}/projects' style='padding:0 24px 14px;'>
-        <div class='field'><label>Name</label><input name='name' maxlength='255' required /></div>
-        <div class='field'><label>Description</label><textarea name='description' required></textarea></div>
-        <div class='field'><label>Date Created</label><input name='date_created' type='date' value='{date.today().isoformat()}' required /></div>
-        <button class='btn-primary' type='submit'>Create Project</button>
-      </form>
+      <div class='header' style='padding-top:0;'>
+        <div><h2 class='title' style='font-size:1.1rem;'>Create Project in this Organization</h2></div>
+        <div class='actions'><button class='btn-primary' type='button' onclick="openDialog('createOrganizationProjectDialog')">Create Project</button></div>
+      </div>
+      <dialog id='createOrganizationProjectDialog'>
+        <form method='post' action='/organizations/{organization_id}/projects'>
+          <div class='dialog-body'>
+            <h2>Create Project in {html.escape(str(org['name']))}</h2>
+            <div class='field'><label>Name</label><input name='name' maxlength='255' required /></div>
+            <div class='field'><label>Description</label><textarea name='description' required></textarea></div>
+            <div class='field'><label>Date Created</label><input name='date_created' type='date' value='{date.today().isoformat()}' required /></div>
+            <div class='dialog-actions'>
+              <button type='button' class='btn-secondary' onclick="closeDialog('createOrganizationProjectDialog')">Cancel</button>
+              <button class='btn-primary' type='submit'>Create Project</button>
+            </div>
+          </div>
+        </form>
+      </dialog>
       <div class='table-wrap'>
         <h2 style='margin:0 0 8px;'>Projects</h2>
         <table><thead><tr><th>Name</th><th>Description</th><th>Date Created</th></tr></thead><tbody>{projects_rows}</tbody></table>
