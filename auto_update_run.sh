@@ -22,6 +22,14 @@ install_requirements() {
   pip install -r "$PROJECT_DIR/requirements.txt"
 }
 
+init_schema() {
+  python "$PROJECT_DIR/init_db.py"
+}
+
+recreate_schema() {
+  python "$PROJECT_DIR/init_db.py" --recreate
+}
+
 stop_uvicorn() {
   if [[ -f "$PID_FILE" ]]; then
     local pid
@@ -59,6 +67,7 @@ pull_and_maybe_update() {
   if [[ "$before" != "$after" ]]; then
     echo "Repository updated: $before -> $after"
     install_requirements
+    recreate_schema
     restart_uvicorn
   else
     echo "No new changes found."
@@ -70,6 +79,7 @@ main() {
   install_requirements
 
   git pull --ff-only
+  init_schema
   restart_uvicorn
 
   while true; do

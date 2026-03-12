@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Projects | Codex Activity App</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header class="header">
+        <div>
+          <h1>Projects</h1>
+          <p class="subtitle">Business project portfolio</p>
+        </div>
+        <div class="actions">
+          <button id="addBtn" class="btn primary">Add</button>
+          <button id="editBtn" class="btn" disabled>Edit</button>
+          <button id="deleteBtn" class="btn danger" disabled>Delete</button>
+        </div>
+      </header>
+
+      <section class="panel">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Description</th>
+              <th>Date Created</th>
+            </tr>
+          </thead>
+          <tbody id="projectRows"></tbody>
+        </table>
+        <p id="status" class="status"></p>
+      </section>
+    </main>
+
+    <dialog id="projectDialog">
+      <form id="projectForm" method="dialog">
+        <h2 id="dialogTitle">Add Project</h2>
+        <label>
+          Name
+          <input id="nameInput" name="name" required maxlength="255" />
+        </label>
+        <label>
+          Description
+          <textarea id="descriptionInput" name="description" maxlength="2000"></textarea>
+        </label>
+        <label>
+          Date Created
+          <input id="dateInput" name="date_created" type="date" value="{{ today }}" required />
+        </label>
+        <div class="dialog-actions">
+          <button type="button" id="cancelBtn" class="btn">Cancel</button>
+          <button type="submit" class="btn primary">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script>
+      const rowsEl = document.getElementById("projectRows");
+      const statusEl = document.getElementById("status");
+      const addBtn = document.getElementById("addBtn");
+      const editBtn = document.getElementById("editBtn");
+      const deleteBtn = document.getElementById("deleteBtn");
+      const dialog = document.getElementById("projectDialog");
+      const form = document.getElementById("projectForm");
+      const dialogTitle = document.getElementById("dialogTitle");
+      const cancelBtn = document.getElementById("cancelBtn");
+      const nameInput = document.getElementById("nameInput");
+      const descriptionInput = document.getElementById("descriptionInput");
+      const dateInput = document.getElementById("dateInput");
+
+      let projects = [];
+      let selectedId = null;
+      let mode = "add";
+
+      function setStatus(message, isError = false) {
+        statusEl.textContent = message;
+        statusEl.classList.toggle("error", isError);
+      }
+
+      function renderRows() {
+        rowsEl.innerHTML = "";
+        for (const project of projects) {
+          const tr = document.createElement("tr");
+          if (project.id === selectedId) tr.classList.add("selected");
+          tr.innerHTML = `
+            <td>${project.name}</td>
+            <td>${project.description || ""}</td>
+            <td>${project.date_created}</td>
+          `;
+          tr.addEventListener("click", () => {
+            selectedId = project.id;
+            editBtn.disabled = false;
+            deleteBtn.disabled = false;
+            renderRows();
+          });
+          rowsEl.appendChild(tr);
+        }
+      }
+
+      async function loadProjects() {
+        const res = await fetch("/api/projects");
+        const data = await res.json();
+        if (!res.ok) {
+          setStatus(data.error || "Failed to load projects", true);
+          return;
+        }
+        projects = data;
+        selectedId = null;
+        editBtn.disabled = true;
+        deleteBtn.disabled = true;
+        renderRows();
+        setStatus(projects.length ? "" : "No projects yet. Use Add to create one.");
+      }
+
+      function openDialog(nextMode) {
+        mode = nextMode;
+        if (mode === "add") {
+          dialogTitle.textContent = "Add Project";
+          form.reset();
+          dateInput.value = "{{ today }}";
+        } else {
+          const project = projects.find((p) => p.id === selectedId);
+          if (!project) return;
+          dialogTitle.textContent = "Edit Project";
+          nameInput.value = project.name;
+          descriptionInput.value = project.description;
+          dateInput.value = project.date_created;
+        }
+        dialog.showModal();
+      }
+
+      addBtn.addEventListener("click", () => openDialog("add"));
+      editBtn.addEventListener("click", () => openDialog("edit"));
+      cancelBtn.addEventListener("click", () => dialog.close());
+
+      deleteBtn.addEventListener("click", async () => {
+        if (!selectedId) return;
+        const confirmed = window.confirm("Delete selected project?");
+        if (!confirmed) return;
+
+        const res = await fetch(`/api/projects/${selectedId}`, { method: "DELETE" });
+        if (!res.ok) {
+          const data = await res.json();
+          setStatus(data.detail || "Delete failed", true);
+          return;
+        }
+        await loadProjects();
+      });
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const payload = {
+          name: nameInput.value.trim(),
+          description: descriptionInput.value.trim(),
+          date_created: dateInput.value,
+        };
+
+        const endpoint = mode === "add" ? "/api/projects" : `/api/projects/${selectedId}`;
+        const method = mode === "add" ? "POST" : "PUT";
+
+        const res = await fetch(endpoint, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const data = await res.json();
+          setStatus(data.detail || data.error || "Save failed", true);
+          return;
+        }
+
+        dialog.close();
+        await loadProjects();
+      });
+
+      loadProjects();
+    </script>
+  </body>
+</html>
