@@ -19,5 +19,8 @@ echo "Installing dependencies from requirements.txt..."
 pip install --upgrade pip
 pip install -r requirements.txt
 
+echo "Recreating MySQL database schema..."
+python3 main.py --reset-db
+
 echo "Starting uvicorn server..."
 exec uvicorn main:app --host 0.0.0.0 --port 8000 --reload

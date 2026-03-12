@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% set title = "Dashboard" %}
+{% block content %}
+<section class="card dashboard-card">
+  <header class="dashboard-header">
+    <div>
+      <h1>Organisation: {{ organisation.name }}</h1>
+      <p class="subtitle">Welcome {{ user.email }}</p>
+    </div>
+    <form method="post" action="/logout">
+      <button type="submit" class="secondary">Logout</button>
+    </form>
+  </header>
+
+  <section class="members">
+    <h2>Members</h2>
+    <ul>
+      {% for member in members %}
+      <li>{{ member.email }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+</section>
+{% endblock %}

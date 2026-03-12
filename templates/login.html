@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% set title = "Sign in" %}
+{% block content %}
+<section class="card auth-card">
+  <h1>Sign in</h1>
+  <p class="subtitle">Access your organisation workspace.</p>
+  {% if error %}<div class="alert">{{ error }}</div>{% endif %}
+  <form method="post" action="/login" class="form-grid">
+    <label for="organisation_id">Organisation</label>
+    <select id="organisation_id" name="organisation_id" required>
+      <option value="" disabled selected>Select organisation</option>
+      {% for organisation in organisations %}
+      <option value="{{ organisation.id }}">{{ organisation.name }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="email">Email</label>
+    <input id="email" type="email" name="email" required placeholder="you@company.com" />
+
+    <label for="password">Password</label>
+    <input id="password" type="password" name="password" required placeholder="••••••••" />
+
+    <button type="submit">Login</button>
+  </form>
+  <p class="footer-link">Need access? <a href="/signup">Create account</a></p>
+</section>
+{% endblock %}

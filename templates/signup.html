@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% set title = "Create account" %}
+{% block content %}
+<section class="card auth-card">
+  <h1>Create account</h1>
+  <p class="subtitle">Join an organisation or create a new one.</p>
+  {% if error %}<div class="alert">{{ error }}</div>{% endif %}
+  <form method="post" action="/signup" class="form-grid">
+    <label for="organisation_id">Organisation</label>
+    <select id="organisation_id" name="organisation_id" required>
+      <option value="" disabled selected>Select organisation</option>
+      {% for organisation in organisations %}
+      <option value="{{ organisation.id }}">{{ organisation.name }}</option>
+      {% endfor %}
+      <option value="new">+ Create new organisation</option>
+    </select>
+
+    <label for="new_organisation">New organisation name (if creating)</label>
+    <input id="new_organisation" type="text" name="new_organisation" placeholder="Acme Consulting" />
+
+    <label for="email">Email</label>
+    <input id="email" type="email" name="email" required placeholder="you@company.com" />
+
+    <label for="password">Password</label>
+    <input id="password" type="password" name="password" required placeholder="••••••••" />
+
+    <button type="submit">Create account</button>
+  </form>
+  <p class="footer-link">Already have an account? <a href="/login">Sign in</a></p>
+</section>
+{% endblock %}
