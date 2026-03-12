@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>Project Details</title><link rel="stylesheet" href="/static/styles.css" /></head>
+  <body>
+    <div class="container"><div class="card">
+      <div class="header"><div><h1 id="projectTitle">Project</h1><p><a href="/projects" class="btn secondary">← Back to Projects</a></p></div></div>
+      <p class="status" id="status"></p>
+      <div class="table-wrap"><table><tbody id="detailBody"></tbody></table></div>
+
+      <div class="table-wrap">
+        <h3>Members</h3>
+        <div class="actions" style="margin-bottom:10px;">
+          <select id="memberLookup"></select>
+          <button class="btn-primary" id="addMemberBtn">Add Member</button>
+        </div>
+        <table><thead><tr><th>First-name</th><th>Middle-name</th><th>Last-name</th><th>Phone</th><th>Email</th></tr></thead><tbody id="membersBody"></tbody></table>
+        <div class="empty" id="membersEmpty" hidden>No members assigned.</div>
+      </div>
+    </div></div>
+
+    <script>
+      const projectId = Number(window.location.pathname.split('/').pop());
+      const status = document.getElementById('status');
+      const setStatus = (msg) => status.textContent = msg;
+
+      async function loadProject() {
+        const res = await fetch(`/api/projects/${projectId}`);
+        if (!res.ok) return setStatus('Project not found.');
+        const p = await res.json();
+        document.getElementById('projectTitle').textContent = p.name;
+        document.getElementById('detailBody').innerHTML = `
+          <tr><th>Name</th><td>${p.name}</td></tr>
+          <tr><th>Description</th><td>${p.description}</td></tr>
+          <tr><th>Date Created</th><td>${p.date_created}</td></tr>
+          <tr><th>Organization</th><td>${p.organization_name || 'Unassigned'}</td></tr>
+        `;
+      }
+
+      async function loadMembers() {
+        const res = await fetch(`/api/projects/${projectId}/members`);
+        if (!res.ok) return;
+        const members = await res.json();
+        const body = document.getElementById('membersBody');
+        const empty = document.getElementById('membersEmpty');
+        body.innerHTML = '';
+        if (!members.length) {
+          empty.hidden = false;
+        } else {
+          empty.hidden = true;
+          for (const m of members) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td><a href="/members/${m.id}">${m.first_name}</a></td><td>${m.middle_name || '-'}</td><td><a href="/members/${m.id}">${m.last_name}</a></td><td>${m.phone || '-'}</td><td>${m.email}</td>`;
+            body.appendChild(tr);
+          }
+        }
+      }
+
+      async function loadLookup() {
+        const res = await fetch(`/api/projects/${projectId}/available-members`);
+        const select = document.getElementById('memberLookup');
+        select.innerHTML = '';
+        if (!res.ok) return;
+        const members = await res.json();
+        if (!members.length) {
+          const option = document.createElement('option');
+          option.textContent = 'No available members';
+          option.value = '';
+          select.appendChild(option);
+          return;
+        }
+        for (const m of members) {
+          const opt = document.createElement('option');
+          opt.value = m.id;
+          opt.textContent = `${m.first_name} ${m.last_name} (${m.email})`;
+          select.appendChild(opt);
+        }
+      }
+
+      document.getElementById('addMemberBtn').addEventListener('click', async () => {
+        const memberId = Number(document.getElementById('memberLookup').value);
+        if (!memberId) return;
+        const res = await fetch(`/api/projects/${projectId}/members`, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({member_id: memberId}),
+        });
+        if (!res.ok) return setStatus('Failed to add member.');
+        setStatus('Member added to project.');
+        await loadMembers();
+        await loadLookup();
+      });
+
+      loadProject();
+      loadMembers();
+      loadLookup();
+    </script>
+  </body>
+</html>

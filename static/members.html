@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Members</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="container"><div class="card">
+      <div class="header">
+        <div><h1>Members</h1><p><a href="/" class="btn secondary">← Back to Dashboard</a></p></div>
+        <div class="actions"><button class="btn-primary" id="openDialogBtn">Add Member</button><button class="btn-danger" id="deleteBtn" disabled>Delete Selected</button></div>
+      </div>
+      <p class="status" id="status"></p>
+      <div class="table-wrap">
+        <table><thead><tr><th>Select</th><th>First-name</th><th>Middle-name</th><th>Last-name</th><th>Phone</th><th>Email</th></tr></thead><tbody id="memberBody"></tbody></table>
+        <div class="empty" id="emptyState" hidden>No members yet.</div>
+      </div>
+    </div></div>
+
+    <dialog id="memberDialog">
+      <div class="dialog-header"><h2>Create Member</h2></div>
+      <form id="memberForm">
+        <label>First-name <input id="firstName" required maxlength="100" /></label>
+        <label>Middle-name (optional) <input id="middleName" maxlength="100" /></label>
+        <label>Last-name <input id="lastName" required maxlength="100" /></label>
+        <label>Phone (optional) <input id="phone" maxlength="50" /></label>
+        <label>Email <input id="email" required maxlength="255" /></label>
+        <label>Organizations
+          <select id="organizationIds" multiple size="5"></select>
+        </label>
+        <div class="dialog-actions"><button type="button" class="secondary" id="cancelBtn">Cancel</button><button type="submit" class="btn-primary">Save Member</button></div>
+      </form>
+    </dialog>
+
+    <script>
+      const memberBody = document.getElementById("memberBody");
+      const emptyState = document.getElementById("emptyState");
+      const status = document.getElementById("status");
+      const dialog = document.getElementById("memberDialog");
+      const form = document.getElementById("memberForm");
+      const orgSelect = document.getElementById("organizationIds");
+      const deleteBtn = document.getElementById("deleteBtn");
+      let selectedMemberId = null;
+      const setStatus = (msg) => (status.textContent = msg);
+
+      async function loadOrganizations() {
+        const res = await fetch('/api/organizations');
+        if (!res.ok) return;
+        const orgs = await res.json();
+        orgSelect.innerHTML = '';
+        for (const org of orgs) {
+          const opt = document.createElement('option');
+          opt.value = org.id;
+          opt.textContent = org.name;
+          orgSelect.appendChild(opt);
+        }
+      }
+
+      function renderRows(members) {
+        memberBody.innerHTML = '';
+        if (!members.length) {
+          emptyState.hidden = false;
+          selectedMemberId = null;
+          deleteBtn.disabled = true;
+          return;
+        }
+        emptyState.hidden = true;
+        for (const m of members) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td><input type="radio" name="selectedMember" ${m.id===selectedMemberId?"checked":""}></td>
+          <td><a href="/members/${m.id}">${m.first_name}</a></td>
+          <td><a href="/members/${m.id}">${m.middle_name || '-'}</a></td>
+          <td><a href="/members/${m.id}">${m.last_name}</a></td>
+          <td><a href="/members/${m.id}">${m.phone || '-'}</a></td>
+          <td><a href="/members/${m.id}">${m.email}</a></td>`;
+          tr.querySelector('input').addEventListener('change', () => {
+            selectedMemberId = m.id;
+            deleteBtn.disabled = false;
+          });
+          memberBody.appendChild(tr);
+        }
+      }
+
+      async function loadMembers() {
+        const res = await fetch('/api/members');
+        if (!res.ok) return setStatus('Unable to load members.');
+        const members = await res.json();
+        if (!members.some(m => m.id === selectedMemberId)) {
+          selectedMemberId = null;
+          deleteBtn.disabled = true;
+        }
+        renderRows(members);
+      }
+
+      document.getElementById('openDialogBtn').addEventListener('click', async () => {
+        form.reset();
+        await loadOrganizations();
+        dialog.showModal();
+      });
+      document.getElementById('cancelBtn').addEventListener('click', () => dialog.close());
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const selectedOrgIds = Array.from(orgSelect.selectedOptions).map(o => Number(o.value));
+        const payload = {
+          first_name: document.getElementById('firstName').value.trim(),
+          middle_name: document.getElementById('middleName').value.trim() || null,
+          last_name: document.getElementById('lastName').value.trim(),
+          phone: document.getElementById('phone').value.trim() || null,
+          email: document.getElementById('email').value.trim(),
+          organization_ids: selectedOrgIds,
+        };
+        const res = await fetch('/api/members', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+        if (!res.ok) return setStatus('Failed to create member.');
+        dialog.close();
+        setStatus('Member created.');
+        await loadMembers();
+      });
+
+      deleteBtn.addEventListener('click', async () => {
+        if (!selectedMemberId) return;
+        if (!window.confirm('Delete selected member?')) return;
+        const res = await fetch(`/api/members/${selectedMemberId}`, {method:'DELETE'});
+        if (!res.ok) return setStatus('Failed to delete member.');
+        selectedMemberId = null;
+        deleteBtn.disabled = true;
+        setStatus('Member deleted.');
+        await loadMembers();
+      });
+
+      loadMembers();
+    </script>
+  </body>
+</html>

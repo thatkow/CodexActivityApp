@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>Member Details</title><link rel="stylesheet" href="/static/styles.css" /></head>
+  <body>
+    <div class="container"><div class="card">
+      <div class="header"><div><h1 id="memberTitle">Member</h1><p><a href="/members" class="btn secondary">← Back to Members</a></p></div></div>
+      <p class="status" id="status"></p>
+      <div class="table-wrap">
+        <table>
+          <tbody id="detailBody"></tbody>
+        </table>
+      </div>
+      <div class="table-wrap">
+        <h3>Projects</h3>
+        <table><thead><tr><th>Name</th><th>Description</th><th>Date Created</th><th>Organization</th></tr></thead><tbody id="projectsBody"></tbody></table>
+        <div class="empty" id="projectsEmpty" hidden>No projects assigned.</div>
+      </div>
+    </div></div>
+
+    <script>
+      const memberId = Number(window.location.pathname.split('/').pop());
+      const status = document.getElementById('status');
+      const setStatus = (msg) => status.textContent = msg;
+
+      async function loadMember() {
+        const res = await fetch(`/api/members/${memberId}`);
+        if (!res.ok) return setStatus('Member not found.');
+        const m = await res.json();
+        document.getElementById('memberTitle').textContent = `${m.first_name} ${m.last_name}`;
+        document.getElementById('detailBody').innerHTML = `
+          <tr><th>First-name</th><td>${m.first_name}</td></tr>
+          <tr><th>Middle-name</th><td>${m.middle_name || '-'}</td></tr>
+          <tr><th>Last-name</th><td>${m.last_name}</td></tr>
+          <tr><th>Phone</th><td>${m.phone || '-'}</td></tr>
+          <tr><th>Email</th><td>${m.email}</td></tr>
+          <tr><th>Organizations</th><td>${(m.organization_names || []).join(', ') || 'None'}</td></tr>
+        `;
+      }
+
+      async function loadProjects() {
+        const res = await fetch(`/api/members/${memberId}/projects`);
+        if (!res.ok) return;
+        const projects = await res.json();
+        const body = document.getElementById('projectsBody');
+        const empty = document.getElementById('projectsEmpty');
+        body.innerHTML = '';
+        if (!projects.length) {
+          empty.hidden = false;
+          return;
+        }
+        empty.hidden = true;
+        for (const p of projects) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td><a href="/projects/${p.id}">${p.name}</a></td><td>${p.description}</td><td>${p.date_created}</td><td>${p.organization_name || 'Unassigned'}</td>`;
+          body.appendChild(tr);
+        }
+      }
+
+      loadMember();
+      loadProjects();
+    </script>
+  </body>
+</html>
