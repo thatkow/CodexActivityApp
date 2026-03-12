@@ -1,14 +1,20 @@
 # CodexActivityApp
 
-Business-style FastAPI app with MySQL-backed **Projects** and **Members** management.
+Business-style FastAPI app with MySQL-backed **Projects**, **Members**, and **Organizations**.
 
 ## Pages
 
-- `/` home page with tiles linking to Projects and Members
-- `/projects` table of projects with add/delete actions
-- `/projects/{id}` project detail page with fields + member list + member lookup add
-- `/members` table of members with add/delete actions
-- `/members/{id}` member detail page with fields + projects table
+- `/` home page with tiles linking to Projects, Members, and Organization
+- `/projects` projects table with add/delete and organization selection in the form
+- `/projects/{id}` project detail showing fields, organization, and members
+  - if the project has an organization, only members in that organization are shown/selectable
+  - if no organization, all members are available
+- `/members` members table with add/delete actions
+- `/members/{id}` member detail page with fields, projects, and organizations
+- `/organizations` organizations table with add/delete actions
+- `/organizations/{id}` organization detail with:
+  - one **Create Project** button that opens a form (project auto-linked to this org)
+  - members table and member lookup association
 
 ## MySQL setup
 
@@ -25,7 +31,9 @@ FLUSH PRIVILEGES;
 Tables are auto-created at app startup:
 - `projects`
 - `members`
-- `project_members` (join table)
+- `organizations`
+- `project_members` (many-to-many)
+- `organization_members` (many-to-many)
 
 ## Setup (venv)
 
