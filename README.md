@@ -6,7 +6,7 @@ Business-style FastAPI app with MySQL-backed **Projects**, **Members**, and **Or
 
 - `/` home page with tiles linking to Projects, Members, and Organization
 - `/projects` projects table with add/delete and organization selection in the form
-- `/projects/{id}` project detail showing fields, organization, and members
+- `/projects/{id}` project detail showing fields, organization, and members (with remove action)
   - if the project has an organization, only members in that organization are shown/selectable
   - if no organization, all members are available
 - `/members` members table with add/delete actions and **Import CSV** button (`First-name,Middle-name,Last-name,Phone,Email`)
@@ -15,6 +15,8 @@ Business-style FastAPI app with MySQL-backed **Projects**, **Members**, and **Or
 - `/organizations/{id}` organization detail with:
   - one **Create Project** button that opens a form (project auto-linked to this org)
   - members table and member lookup association
+
+- When a member is added to or removed from a project, the app sends an SMTP email that includes a direct link to that project.
 
 ## MySQL setup
 
@@ -54,6 +56,38 @@ export DB_NAME=codex_activity_app
 export DB_USER=codex_app_user
 export DB_PASSWORD=codex_app_password
 ```
+
+
+## `.env` configuration (SMTP + app URL)
+
+The app loads environment variables from a `.env` file in the project root (via `python-dotenv`).
+
+Example `.env`:
+
+```dotenv
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_NAME=codex_activity_app
+DB_USER=codex_app_user
+DB_PASSWORD=codex_app_password
+
+APP_BASE_URL=http://127.0.0.1:8000
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=your_smtp_username
+SMTP_PASSWORD=your_smtp_password
+SMTP_FROM=notifications@example.com
+SMTP_USE_TLS=true
+```
+
+SMTP variables used:
+- `SMTP_HOST` (required to send)
+- `SMTP_PORT` (default `587`)
+- `SMTP_USER` (optional unless your provider requires auth)
+- `SMTP_PASSWORD` (optional unless your provider requires auth)
+- `SMTP_FROM` (defaults to `SMTP_USER` if not set)
+- `SMTP_USE_TLS` (`true`/`false`, default `true`)
+- `APP_BASE_URL` (used to build project links in all emails; default `http://127.0.0.1:8000`)
 
 ## Run
 

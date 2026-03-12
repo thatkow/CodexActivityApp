@@ -4,11 +4,17 @@ import os
 from datetime import date
 from typing import Optional
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import Column, Date, ForeignKey, Integer, String, UniqueConstraint, create_engine, inspect, text
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+
+from emails import send_project_membership_email
+
+
+load_dotenv()
 
 
 def _required_env(name: str, default: str | None = None) -> str:
@@ -308,14 +314,15 @@ def project_detail_page(project_id: int) -> str:
 <h1>Project Detail</h1><div id="card" class="card"></div>
 <h2>Members</h2>
 <div class="toolbar"><select id="memberLookup"></select><button class="primary" id="addMember">Add Member via Lookup</button></div>
-<table><thead><tr><th>First-name</th><th>Middle-name</th><th>Last-name</th><th>Email</th></tr></thead><tbody id="memberRows"></tbody></table><p id="status" class="status"></p>
+<table><thead><tr><th>First-name</th><th>Middle-name</th><th>Last-name</th><th>Email</th><th>Actions</th></tr></thead><tbody id="memberRows"></tbody></table><p id="status" class="status"></p>
 </div>
 <script>
 const pid=__PID__,card=document.getElementById('card'),rows=document.getElementById('memberRows'),lookup=document.getElementById('memberLookup'),status=document.getElementById('status');
 function esc(v){return (v||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')}
 async function load(){const r=await fetch('/api/projects/'+pid);if(!r.ok){card.innerHTML='<p class="err">Project not found</p>';return;}const p=await r.json();
 card.innerHTML=`<p><strong>Name:</strong> ${esc(p.name)}</p><p><strong>Description:</strong> ${esc(p.description)}</p><p><strong>Date Created:</strong> ${p.date_created}</p><p><strong>Organization:</strong> ${esc(p.organization_name||'None')}</p>`;
-rows.innerHTML=(p.members||[]).map(m=>`<tr><td><a href="/members/${m.id}">${esc(m.first_name)}</a></td><td>${esc(m.middle_name||'')}</td><td>${esc(m.last_name)}</td><td>${esc(m.email)}</td></tr>`).join('')||'<tr><td colspan="4" class="muted">No members assigned.</td></tr>';
+rows.innerHTML=(p.members||[]).map(m=>`<tr><td><a href="/members/${m.id}">${esc(m.first_name)}</a></td><td>${esc(m.middle_name||'')}</td><td>${esc(m.last_name)}</td><td>${esc(m.email)}</td><td><button class="danger" data-remove-member-id="${m.id}">Remove</button></td></tr>`).join('')||'<tr><td colspan="5" class="muted">No members assigned.</td></tr>';
+Array.from(document.querySelectorAll('[data-remove-member-id]')).forEach((btn)=>{btn.onclick=async()=>{const mid=Number(btn.getAttribute('data-remove-member-id'));const r=await fetch('/api/projects/'+pid+'/members/'+mid,{method:'DELETE'});if(!r.ok){status.textContent='Remove member failed';status.className='status err';return;}status.textContent='Member removed';status.className='status';load();};});
 lookup.innerHTML=(p.lookup_members||[]).map(m=>`<option value="${m.id}">${esc(m.first_name)} ${esc(m.middle_name||'')} ${esc(m.last_name)} (${esc(m.email)})</option>`).join('')||'<option value="">No available members</option>';
 }
 addMember.onclick=async()=>{if(!lookup.value) return;const r=await fetch('/api/projects/'+pid+'/members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({member_id:Number(lookup.value)})});if(!r.ok){status.textContent='Add member failed';status.className='status err';return;}status.textContent='Member added';status.className='status';load();};
@@ -482,7 +489,38 @@ def add_project_member(project_id: int, payload: ProjectMemberLink) -> dict:
             return {"status": "already-linked"}
         project.members.append(member)
         db.commit()
+
+        send_project_membership_email(
+            member_email=member.email,
+            member_full_name=f"{member.first_name} {member.last_name}".strip(),
+            project_name=project.name,
+            project_id=project.id,
+            action="added",
+        )
+
         return {"status": "linked"}
+
+
+@app.delete("/api/projects/{project_id}/members/{member_id}", status_code=204)
+def remove_project_member(project_id: int, member_id: int) -> None:
+    with SessionLocal() as db:
+        project = db.get(Project, project_id)
+        member = db.get(Member, member_id)
+        if not project or not member:
+            raise HTTPException(status_code=404, detail="Project or member not found")
+        if member not in project.members:
+            raise HTTPException(status_code=404, detail="Member is not assigned to project")
+
+        project.members.remove(member)
+        db.commit()
+
+        send_project_membership_email(
+            member_email=member.email,
+            member_full_name=f"{member.first_name} {member.last_name}".strip(),
+            project_name=project.name,
+            project_id=project.id,
+            action="removed",
+        )
 
 
 @app.get("/api/members")
