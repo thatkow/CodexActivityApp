@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Codex Activity App</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">Project Portfolio</p>
+          <h1>Codex built this!</h1>
+        </div>
+        <div class="actions">
+          <button id="openDialogBtn" class="btn btn-primary">Add Project</button>
+          <button id="deleteBtn" class="btn btn-danger" disabled>Delete Selected</button>
+        </div>
+      </header>
+
+      <section class="card">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Name</th>
+              <th>Description</th>
+              <th>Date Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for project in projects %}
+            <tr>
+              <td><input type="checkbox" class="project-check" value="{{ project.id }}" /></td>
+              <td>{{ project.name }}</td>
+              <td>{{ project.description }}</td>
+              <td>{{ project.date_created }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="4" class="empty">No projects yet. Add your first project.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+    </main>
+
+    <dialog id="projectDialog">
+      <form method="post" action="/projects" class="dialog-form">
+        <h2>Create Project</h2>
+
+        <label>
+          Name
+          <input type="text" name="name" required maxlength="150" />
+        </label>
+
+        <label>
+          Description
+          <textarea name="description" rows="3" required maxlength="500"></textarea>
+        </label>
+
+        <label>
+          Date Created
+          <input type="date" name="date_created" required />
+        </label>
+
+        <div class="dialog-actions">
+          <button type="button" id="cancelBtn" class="btn btn-secondary">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script>
+      const dialog = document.getElementById("projectDialog");
+      const openDialogBtn = document.getElementById("openDialogBtn");
+      const cancelBtn = document.getElementById("cancelBtn");
+      const deleteBtn = document.getElementById("deleteBtn");
+      const checks = () => Array.from(document.querySelectorAll(".project-check"));
+
+      function refreshDeleteState() {
+        const hasSelection = checks().some((input) => input.checked);
+        deleteBtn.disabled = !hasSelection;
+      }
+
+      openDialogBtn.addEventListener("click", () => dialog.showModal());
+      cancelBtn.addEventListener("click", () => dialog.close());
+
+      document.addEventListener("change", (event) => {
+        if (event.target.classList.contains("project-check")) {
+          refreshDeleteState();
+        }
+      });
+
+      deleteBtn.addEventListener("click", async () => {
+        const selected = checks().filter((input) => input.checked).map((input) => input.value);
+        if (!selected.length) {
+          return;
+        }
+
+        const formData = new FormData();
+        selected.forEach((id) => formData.append("project_ids", id));
+
+        const response = await fetch("/projects/delete", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (response.ok) {
+          window.location.reload();
+          return;
+        }
+
+        alert("Failed to delete selected projects.");
+      });
+    </script>
+  </body>
+</html>
