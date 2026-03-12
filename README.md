@@ -1,17 +1,30 @@
 # CodexActivityApp
 
-A business-style FastAPI web application backed by MySQL.
+A business-style FastAPI + MySQL web application.
 
-## Features
+## Pages and behavior
 
-- `/` shows a **Projects** dashboard table with columns:
-  - Name
-  - Description
-  - Date Created
-- **Add Project** button (top-right above the table) opens a dialog form.
-- Dialog defaults **Date Created** to today's date.
-- **Delete All** button is shown next to Add Project.
-- Each project row also includes a Delete button.
+- `/` is now a landing dashboard with tiles to navigate to:
+  - `/projects`
+  - `/members`
+- `/projects`:
+  - table with columns **Name**, **Description**, **Date Created**
+  - Add Project and Delete All buttons
+  - menu item to go back to `/`
+  - project rows are clickable to open `/projects/{id}`
+- `/projects/{id}`:
+  - shows project fields
+  - shows a members table for the project
+  - members are clickable to open `/members/{id}`
+  - includes **Add Member via Lookup** for assigning existing members to the project
+- `/members`:
+  - table with columns **First-name**, **Middle-name**, **Last-name**, **Phone**, **Email**
+  - Add Member and Delete All buttons
+  - member rows are clickable to open `/members/{id}`
+  - **Middle-name** and **Phone** are optional
+- `/members/{id}`:
+  - shows all member fields
+  - shows a table of projects that member belongs to
 
 ## MySQL setup (localhost)
 
@@ -30,7 +43,7 @@ A business-style FastAPI web application backed by MySQL.
    FLUSH PRIVILEGES;
    ```
 
-3. (Optional) If you want to run the app with custom credentials, set env vars:
+3. (Optional) Override defaults with environment variables:
 
    ```bash
    export DB_HOST=127.0.0.1
@@ -40,7 +53,7 @@ A business-style FastAPI web application backed by MySQL.
    export DB_NAME=codex_activity_app
    ```
 
-## Setup with `venv`
+## Setup with venv
 
 1. Create a virtual environment:
 
@@ -60,13 +73,13 @@ A business-style FastAPI web application backed by MySQL.
    pip install -r requirements.txt
    ```
 
-4. Initialize database tables:
+4. Initialize DB schema:
 
    ```bash
    python init_db.py
    ```
 
-## Run the app
+## Run
 
 ```bash
 uvicorn app:app --host 0.0.0.0 --port 8000
@@ -74,26 +87,20 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 
 Then open `http://localhost:8000`.
 
-## Auto-update runner script
-
-Run:
+## Auto-update runner
 
 ```bash
 ./auto_update_run.sh
 ```
 
-What it does:
+Script behavior:
 
-1. Runs `git pull` once at startup.
-2. Ensures `.venv` exists and is activated.
-3. Installs/upgrades from `requirements.txt`.
-4. Initializes the database.
-5. Starts Uvicorn.
-6. Every 10 seconds, runs `git pull` again.
-7. If git `HEAD` changed, it:
-   - reinstalls dependencies,
-   - **recreates the projects database table** (`python init_db.py --recreate`),
-   - interrupts running Uvicorn,
-   - restarts Uvicorn.
+1. Initial `git pull`
+2. Ensure + activate `.venv`
+3. Install requirements
+4. Initialize DB schema
+5. Start Uvicorn
+6. Every 10s: `git pull`
+7. If `HEAD` changed: reinstall requirements, recreate DB tables (`python init_db.py --recreate`), interrupt running Uvicorn, restart Uvicorn.
 
-> Stop the script with `Ctrl+C`.
+> Stop with `Ctrl+C`.
