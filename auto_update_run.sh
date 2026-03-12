@@ -20,7 +20,15 @@ fi
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
 
-pip install -r requirements.txt
+install_requirements() {
+  echo "Installing dependencies..."
+  pip install -r requirements.txt
+}
+
+recreate_database() {
+  echo "Recreating database schema..."
+  python recreate_db.py
+}
 
 start_uvicorn() {
   echo "Starting uvicorn..."
@@ -42,6 +50,8 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
+install_requirements
+recreate_database
 start_uvicorn
 
 while true; do
@@ -53,9 +63,10 @@ while true; do
     current_rev="$(git rev-parse HEAD)"
 
     if [[ "$previous_rev" != "$current_rev" ]]; then
-      echo "Repository updated. Installing dependencies and restarting uvicorn..."
-      pip install -r requirements.txt
+      echo "Repository updated. Reinstalling, recreating DB, and restarting uvicorn..."
       stop_uvicorn
+      install_requirements
+      recreate_database
       start_uvicorn
     fi
   else
