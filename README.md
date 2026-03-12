@@ -98,6 +98,7 @@ SMTP variables are used when adding/removing a member from a project:
 - `SMTP_FROM` (required to enable email sending)
 - `SMTP_USE_TLS` (`true`/`false`, default `true`)
 - `APP_BASE_URL` (default `http://127.0.0.1:8000`, used to generate project links in emails)
+- `LOG_LEVEL` (optional, default `INFO`, controls application/email log verbosity)
 
 ## 5) Run locally
 

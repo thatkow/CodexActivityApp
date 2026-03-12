@@ -1,7 +1,8 @@
 import csv
 import html
-import os
 import io
+import logging
+import os
 from datetime import date
 from typing import Any
 
@@ -14,6 +15,8 @@ from emails import send_project_member_added_email, send_project_member_removed_
 
 app = FastAPI(title="Codex Activity App")
 load_dotenv()
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
+logger = logging.getLogger(__name__)
 
 
 MENU = [("Home", "/"), ("Projects", "/projects"), ("Members", "/members"), ("Organization", "/organizations")]
@@ -853,7 +856,7 @@ def add_member_to_project(project_id: int, member_id: int = Form(...)) -> Redire
                     project_url=project_url(project_id),
                 )
             except Exception:
-                pass
+                logger.exception("Failed to send member-added email", extra={"project_id": project_id, "member_id": member_id})
 
     return RedirectResponse(url=f"/projects/{project_id}", status_code=303)
 
@@ -900,7 +903,7 @@ def remove_member_from_project(project_id: int, member_id: int) -> RedirectRespo
                 project_url=project_url(project_id),
             )
         except Exception:
-            pass
+            logger.exception("Failed to send member-removed email", extra={"project_id": project_id, "member_id": member_id})
 
     return RedirectResponse(url=f"/projects/{project_id}", status_code=303)
 

@@ -1,6 +1,10 @@
+import logging
 import os
 import smtplib
 from email.message import EmailMessage
+
+
+logger = logging.getLogger(__name__)
 
 
 def _send_email(*, to_email: str, subject: str, body: str) -> None:
@@ -11,7 +15,16 @@ def _send_email(*, to_email: str, subject: str, body: str) -> None:
     smtp_from = os.getenv("SMTP_FROM")
     smtp_use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() in {"1", "true", "yes", "on"}
 
+    logger.info(
+        "Preparing email",
+        extra={"to_email": to_email, "subject": subject, "smtp_host": smtp_host, "smtp_port": smtp_port, "smtp_use_tls": smtp_use_tls},
+    )
+
     if not smtp_host or not smtp_from:
+        logger.warning(
+            "Skipping email because SMTP_HOST or SMTP_FROM is not configured",
+            extra={"to_email": to_email, "smtp_host": smtp_host, "smtp_from_set": bool(smtp_from)},
+        )
         return
 
     message = EmailMessage()
@@ -20,12 +33,20 @@ def _send_email(*, to_email: str, subject: str, body: str) -> None:
     message["Subject"] = subject
     message.set_content(body)
 
-    with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
-        if smtp_use_tls:
-            server.starttls()
-        if smtp_user and smtp_password:
-            server.login(smtp_user, smtp_password)
-        server.send_message(message)
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+            if smtp_use_tls:
+                logger.info("Starting TLS for SMTP connection")
+                server.starttls()
+            if smtp_user and smtp_password:
+                logger.info("Authenticating with SMTP server", extra={"smtp_user": smtp_user})
+                server.login(smtp_user, smtp_password)
+            logger.info("Sending email", extra={"to_email": to_email, "subject": subject})
+            server.send_message(message)
+            logger.info("Email sent successfully", extra={"to_email": to_email, "subject": subject})
+    except Exception:
+        logger.exception("Failed to send email", extra={"to_email": to_email, "subject": subject, "smtp_host": smtp_host, "smtp_port": smtp_port})
+        raise
 
 
 def send_project_member_added_email(
