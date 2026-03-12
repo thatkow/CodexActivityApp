@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import Column, Date, ForeignKey, Integer, String, UniqueConstraint, create_engine
+from sqlalchemy import Column, Date, ForeignKey, Integer, String, UniqueConstraint, create_engine, inspect, text
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
 
@@ -133,9 +133,21 @@ class OrganizationMemberLink(BaseModel):
 app = FastAPI(title="CodexActivityApp")
 
 
+def _migrate_schema_if_needed() -> None:
+    """Apply lightweight schema updates for existing databases without Alembic."""
+    inspector = inspect(engine)
+
+    if inspector.has_table("projects"):
+        project_columns = {col["name"] for col in inspector.get_columns("projects")}
+        if "organization_id" not in project_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE projects ADD COLUMN organization_id INTEGER NULL"))
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     Base.metadata.create_all(bind=engine)
+    _migrate_schema_if_needed()
 
 
 @app.get("/", response_class=HTMLResponse)

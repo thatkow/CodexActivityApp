@@ -35,6 +35,8 @@ Tables are auto-created at app startup:
 - `project_members` (many-to-many)
 - `organization_members` (many-to-many)
 
+On startup, the app also performs a lightweight compatibility migration for older databases by adding `projects.organization_id` if it is missing.
+
 ## Setup (venv)
 
 ```bash
