@@ -1,0 +1,139 @@
+:root {
+  color-scheme: light;
+  --bg: #f2f5fb;
+  --panel: #ffffff;
+  --text: #152238;
+  --muted: #627089;
+  --accent: #2563eb;
+  --accent-dark: #1744a8;
+  --border: #dbe3f2;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Inter", "Segoe UI", Arial, sans-serif;
+  background: linear-gradient(130deg, #e7edf8, #f8fbff);
+  color: var(--text);
+}
+
+.auth-layout {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+}
+
+.auth-card {
+  width: min(520px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 14px 30px rgba(26, 45, 79, 0.08);
+}
+
+h1,
+h2 {
+  margin: 0;
+}
+
+.subtitle {
+  color: var(--muted);
+  margin: 0.5rem 0 1rem;
+}
+
+.form-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+input,
+select {
+  padding: 0.7rem 0.8rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  font-size: 1rem;
+}
+
+.btn-primary,
+.btn-secondary {
+  margin-top: 0.75rem;
+  border: none;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: var(--accent-dark);
+}
+
+.btn-secondary {
+  background: #e9eefb;
+  color: #233657;
+}
+
+.footnote {
+  margin-top: 1rem;
+  color: var(--muted);
+}
+
+.message {
+  background: #fff3e0;
+  border: 1px solid #ffd7ad;
+  color: #7a4300;
+  padding: 0.7rem;
+  border-radius: 8px;
+}
+
+.dashboard-layout {
+  min-height: 100vh;
+  padding: 2rem;
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1.25rem;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.25rem;
+  box-shadow: 0 10px 24px rgba(26, 45, 79, 0.08);
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.members-panel ul {
+  padding-left: 1.2rem;
+  margin-top: 0.75rem;
+}
+
+.members-panel li {
+  margin-bottom: 0.45rem;
+}
+
+@media (max-width: 900px) {
+  .dashboard-layout {
+    grid-template-columns: 1fr;
+  }
+}

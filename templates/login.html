@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Codex Business Portal | Login</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main class="auth-layout">
+    <section class="auth-card">
+      <h1>Codex Business Portal</h1>
+      <p class="subtitle">Sign in to manage your organisation.</p>
+      {% if error %}<p class="message">{{ error }}</p>{% endif %}
+      <form method="post" action="/login" class="form-grid">
+        <label for="organization_id">Organisation</label>
+        <select id="organization_id" name="organization_id" required>
+          <option value="" disabled selected>Select organisation</option>
+          {% for org in organisations %}
+            <option value="{{ org.id }}">{{ org.name }}</option>
+          {% endfor %}
+        </select>
+
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" placeholder="you@company.com" required />
+
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" required />
+
+        <button type="submit" class="btn-primary">Log in</button>
+      </form>
+      <p class="footnote">Need access? <a href="/register">Create an account</a></p>
+    </section>
+  </main>
+</body>
+</html>

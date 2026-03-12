@@ -39,6 +39,8 @@ source "$VENV_DIR/bin/activate"
 pip install --upgrade pip
 pip install -r "$REQ_FILE"
 
+python init_db.py --recreate
+
 if [[ -f "$PID_FILE" ]]; then
   OLD_PID="$(cat "$PID_FILE")"
   if kill -0 "$OLD_PID" 2>/dev/null; then

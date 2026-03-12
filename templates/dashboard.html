@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Codex Business Portal | Dashboard</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main class="dashboard-layout">
+    <section class="panel main-panel">
+      <header class="panel-header">
+        <div>
+          <h1>Organisation: {{ organisation.name }}</h1>
+          <p class="subtitle">Welcome {{ user.email }}</p>
+        </div>
+        <form method="post" action="/logout">
+          <button type="submit" class="btn-secondary">Logout</button>
+        </form>
+      </header>
+    </section>
+
+    <aside class="panel members-panel">
+      <h2>Members</h2>
+      <ul>
+        {% for member in members %}
+          <li>{{ member.email }}</li>
+        {% endfor %}
+      </ul>
+    </aside>
+  </main>
+</body>
+</html>
