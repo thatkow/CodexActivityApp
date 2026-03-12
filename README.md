@@ -22,6 +22,7 @@ A FastAPI + MySQL business-style dashboard with **Projects**, **Organizations**,
 - `/members`
   - columns: First-name, Middle-name, Last-name, Phone, Email
   - add/delete member
+  - import from CSV header: `First-name,Middle-name,Last-name,Phone,Email`
   - Middle-name and Phone are optional
   - entries open `/members/{id}`
 - `/members/{id}`

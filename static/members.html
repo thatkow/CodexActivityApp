@@ -10,7 +10,7 @@
     <div class="container"><div class="card">
       <div class="header">
         <div><h1>Members</h1><p><a href="/" class="btn secondary">← Back to Dashboard</a></p></div>
-        <div class="actions"><button class="btn-primary" id="openDialogBtn">Add Member</button><button class="btn-danger" id="deleteBtn" disabled>Delete Selected</button></div>
+        <div class="actions"><button class="btn-primary" id="openDialogBtn">Add Member</button><button class="secondary" id="importCsvBtn">Import CSV</button><input id="csvFileInput" type="file" accept=".csv,text/csv" hidden /><button class="btn-danger" id="deleteBtn" disabled>Delete Selected</button></div>
       </div>
       <p class="status" id="status"></p>
       <div class="table-wrap">
@@ -42,6 +42,8 @@
       const form = document.getElementById("memberForm");
       const orgSelect = document.getElementById("organizationIds");
       const deleteBtn = document.getElementById("deleteBtn");
+      const importCsvBtn = document.getElementById("importCsvBtn");
+      const csvFileInput = document.getElementById("csvFileInput");
       let selectedMemberId = null;
       const setStatus = (msg) => (status.textContent = msg);
 
@@ -128,6 +130,88 @@
         deleteBtn.disabled = true;
         setStatus('Member deleted.');
         await loadMembers();
+      });
+
+
+      function splitCsvLine(line) {
+        const out = [];
+        let cur = "";
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i += 1) {
+          const ch = line[i];
+          if (ch === '"') {
+            if (inQuotes && line[i + 1] === '"') {
+              cur += '"';
+              i += 1;
+            } else {
+              inQuotes = !inQuotes;
+            }
+          } else if (ch === ',' && !inQuotes) {
+            out.push(cur.trim());
+            cur = "";
+          } else {
+            cur += ch;
+          }
+        }
+        out.push(cur.trim());
+        return out;
+      }
+
+      async function importMembersFromCsv(file) {
+        const text = await file.text();
+        const lines = text.split(/\r?\n/).filter((line) => line.trim().length);
+        if (lines.length < 2) {
+          setStatus('CSV must include a header and at least one data row.');
+          return;
+        }
+
+        const header = splitCsvLine(lines[0]).map((h) => h.trim().toLowerCase());
+        const expected = ['first-name', 'middle-name', 'last-name', 'phone', 'email'];
+        if (header.length < expected.length || !expected.every((name, idx) => header[idx] === name)) {
+          setStatus('CSV header must be: First-name,Middle-name,Last-name,Phone,Email');
+          return;
+        }
+
+        let imported = 0;
+        let failed = 0;
+
+        for (let i = 1; i < lines.length; i += 1) {
+          const cols = splitCsvLine(lines[i]);
+          const payload = {
+            first_name: (cols[0] || '').trim(),
+            middle_name: (cols[1] || '').trim() || null,
+            last_name: (cols[2] || '').trim(),
+            phone: (cols[3] || '').trim() || null,
+            email: (cols[4] || '').trim(),
+            organization_ids: [],
+          };
+
+          if (!payload.first_name || !payload.last_name || !payload.email) {
+            failed += 1;
+            continue;
+          }
+
+          const res = await fetch('/api/members', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+          });
+
+          if (res.ok) imported += 1;
+          else failed += 1;
+        }
+
+        setStatus(`CSV import complete. Imported: ${imported}. Failed: ${failed}.`);
+        await loadMembers();
+      }
+
+      importCsvBtn.addEventListener('click', () => csvFileInput.click());
+
+      csvFileInput.addEventListener('change', async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        await importMembersFromCsv(file);
+        csvFileInput.value = '';
       });
 
       loadMembers();
