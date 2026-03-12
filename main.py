@@ -1,8 +1,10 @@
+import csv
+import io
 import os
 from datetime import date
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import Column, Date, ForeignKey, Integer, String, UniqueConstraint, create_engine, inspect, text
@@ -201,7 +203,7 @@ def members_page() -> str:
 <title>Members</title><style>__CSS__</style></head>
 <body><div class="container"><div class="topnav"><a href="/">← Home</a><a href="/projects">Projects</a><a href="/organizations">Organization</a></div>
 <h1>Members</h1>
-<div class="toolbar"><button class="primary" id="addBtn">Add Member</button><button class="danger" id="delBtn">Delete Selected</button></div>
+<div class="toolbar"><button class="primary" id="addBtn">Add Member</button><button class="primary" id="importBtn">Import CSV</button><button class="danger" id="delBtn">Delete Selected</button><input id="importFile" type="file" accept=".csv,text/csv" style="display:none" /></div>
 <table><thead><tr><th></th><th>First-name</th><th>Middle-name</th><th>Last-name</th><th>Phone</th><th>Email</th></tr></thead><tbody id="rows"></tbody></table><p id="status" class="status"></p>
 </div>
 <dialog id="dlg"><form id="frm" class="form"><h2>Add Member</h2>
@@ -213,12 +215,32 @@ def members_page() -> str:
 <div class="actions"><button type="button" id="cancel">Cancel</button><button class="primary" type="submit">Save</button></div>
 </form></dialog>
 <script>
-const rows=document.getElementById('rows'),status=document.getElementById('status');let selected=null;
+const rows=document.getElementById('rows'),status=document.getElementById('status'),importBtn=document.getElementById('importBtn'),importFile=document.getElementById('importFile');let selected=null;
 function esc(v){return (v||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')}
 async function load(){const r=await fetch('/api/members');const data=await r.json();if(!data.length){rows.innerHTML='<tr><td colspan="6" class="muted">No members yet.</td></tr>';return;}
 rows.innerHTML=data.map(m=>`<tr><td><input type="radio" name="sel" value="${m.id}" ${selected===m.id?'checked':''}></td><td><a href="/members/${m.id}">${esc(m.first_name)}</a></td><td>${esc(m.middle_name||'')}</td><td>${esc(m.last_name)}</td><td>${esc(m.phone||'')}</td><td>${esc(m.email)}</td></tr>`).join('');
 document.querySelectorAll('input[name="sel"]').forEach(i=>i.onchange=()=>selected=Number(i.value));}
 addBtn.onclick=()=>dlg.showModal();cancel.onclick=()=>dlg.close();
+importBtn.onclick=()=>importFile.click();
+importFile.onchange=async()=>{
+  const file=importFile.files && importFile.files[0];
+  if(!file) return;
+  const formData=new FormData();
+  formData.append('file', file);
+  const r=await fetch('/api/members/import_csv',{method:'POST',body:formData});
+  if(!r.ok){
+    const err=await r.text();
+    status.textContent='Import failed: '+err;
+    status.className='status err';
+    importFile.value='';
+    return;
+  }
+  const result=await r.json();
+  status.textContent=`Imported ${result.created} member(s), skipped ${result.skipped} row(s).`;
+  status.className='status';
+  importFile.value='';
+  load();
+};
 frm.onsubmit=async(e)=>{e.preventDefault();const p=Object.fromEntries(new FormData(frm).entries());if(!p.middle_name) delete p.middle_name;if(!p.phone) delete p.phone;const r=await fetch('/api/members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});if(!r.ok){status.textContent='Create failed';status.className='status err';return;}dlg.close();status.textContent='Member created';status.className='status';load();};
 delBtn.onclick=async()=>{if(!selected){status.textContent='Select a member first';status.className='status err';return;}const r=await fetch('/api/members/'+selected,{method:'DELETE'});if(!r.ok){status.textContent='Delete failed';status.className='status err';return;}selected=null;status.textContent='Deleted';status.className='status';load();};
 load();
@@ -244,12 +266,32 @@ def organizations_page() -> str:
 <div class="actions"><button type="button" id="cancel">Cancel</button><button class="primary" type="submit">Save</button></div>
 </form></dialog>
 <script>
-const rows=document.getElementById('rows'),status=document.getElementById('status');let selected=null;
+const rows=document.getElementById('rows'),status=document.getElementById('status'),importBtn=document.getElementById('importBtn'),importFile=document.getElementById('importFile');let selected=null;
 function esc(v){return (v||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')}
 async function load(){const r=await fetch('/api/organizations');const data=await r.json();if(!data.length){rows.innerHTML='<tr><td colspan="4" class="muted">No organizations yet.</td></tr>';return;}
 rows.innerHTML=data.map(o=>`<tr><td><input type="radio" name="sel" value="${o.id}" ${selected===o.id?'checked':''}></td><td><a href="/organizations/${o.id}">${esc(o.name)}</a></td><td>${esc(o.address||'')}</td><td>${esc(o.abn||'')}</td></tr>`).join('');
 document.querySelectorAll('input[name="sel"]').forEach(i=>i.onchange=()=>selected=Number(i.value));}
 addBtn.onclick=()=>dlg.showModal();cancel.onclick=()=>dlg.close();
+importBtn.onclick=()=>importFile.click();
+importFile.onchange=async()=>{
+  const file=importFile.files && importFile.files[0];
+  if(!file) return;
+  const formData=new FormData();
+  formData.append('file', file);
+  const r=await fetch('/api/members/import_csv',{method:'POST',body:formData});
+  if(!r.ok){
+    const err=await r.text();
+    status.textContent='Import failed: '+err;
+    status.className='status err';
+    importFile.value='';
+    return;
+  }
+  const result=await r.json();
+  status.textContent=`Imported ${result.created} member(s), skipped ${result.skipped} row(s).`;
+  status.className='status';
+  importFile.value='';
+  load();
+};
 frm.onsubmit=async(e)=>{e.preventDefault();const p=Object.fromEntries(new FormData(frm).entries());if(!p.address) delete p.address;if(!p.abn) delete p.abn;const r=await fetch('/api/organizations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});if(!r.ok){status.textContent='Create failed';status.className='status err';return;}dlg.close();status.textContent='Organization created';status.className='status';load();};
 delBtn.onclick=async()=>{if(!selected){status.textContent='Select an organization first';status.className='status err';return;}const r=await fetch('/api/organizations/'+selected,{method:'DELETE'});if(!r.ok){status.textContent='Delete failed';status.className='status err';return;}selected=null;status.textContent='Deleted';status.className='status';load();};
 load();
@@ -466,6 +508,57 @@ def create_member(payload: MemberCreate) -> dict:
         db.commit()
         db.refresh(member)
         return _member_dict(member)
+
+
+@app.post("/api/members/import_csv")
+def import_members_csv(file: UploadFile = File(...)) -> dict:
+    filename = (file.filename or "").lower()
+    if not filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Please upload a .csv file")
+
+    raw = file.file.read()
+    try:
+        decoded = raw.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="CSV must be UTF-8 encoded") from exc
+
+    reader = csv.DictReader(io.StringIO(decoded))
+    expected = ["First-name", "Middle-name", "Last-name", "Phone", "Email"]
+    if reader.fieldnames != expected:
+        raise HTTPException(status_code=400, detail=f"CSV header must be: {','.join(expected)}")
+
+    created = 0
+    skipped = 0
+    with SessionLocal() as db:
+        for row in reader:
+            first = (row.get("First-name") or "").strip()
+            middle = (row.get("Middle-name") or "").strip() or None
+            last = (row.get("Last-name") or "").strip()
+            phone = (row.get("Phone") or "").strip() or None
+            email = (row.get("Email") or "").strip()
+
+            if not first or not last or not email:
+                skipped += 1
+                continue
+
+            if db.query(Member).filter(Member.email == email).first():
+                skipped += 1
+                continue
+
+            db.add(
+                Member(
+                    first_name=first,
+                    middle_name=middle,
+                    last_name=last,
+                    phone=phone,
+                    email=email,
+                )
+            )
+            created += 1
+
+        db.commit()
+
+    return {"created": created, "skipped": skipped}
 
 
 @app.get("/api/members/{member_id}")

@@ -9,7 +9,7 @@ Business-style FastAPI app with MySQL-backed **Projects**, **Members**, and **Or
 - `/projects/{id}` project detail showing fields, organization, and members
   - if the project has an organization, only members in that organization are shown/selectable
   - if no organization, all members are available
-- `/members` members table with add/delete actions
+- `/members` members table with add/delete actions and **Import CSV** button (`First-name,Middle-name,Last-name,Phone,Email`)
 - `/members/{id}` member detail page with fields, projects, and organizations
 - `/organizations` organizations table with add/delete actions
 - `/organizations/{id}` organization detail with:
