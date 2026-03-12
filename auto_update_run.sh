@@ -21,21 +21,33 @@ install_requirements() {
   pip install -r requirements.txt
 }
 
-restart_uvicorn() {
+recreate_database() {
+  python init_db.py --recreate
+}
+
+stop_uvicorn() {
   if [[ -n "${UVICORN_PID:-}" ]] && kill -0 "$UVICORN_PID" 2>/dev/null; then
     kill "$UVICORN_PID" 2>/dev/null || true
     wait "$UVICORN_PID" 2>/dev/null || true
   fi
 
   pkill -f "uvicorn $APP_MODULE" 2>/dev/null || true
+}
 
+start_uvicorn() {
   uvicorn "$APP_MODULE" --host "$HOST" --port "$PORT" &
   UVICORN_PID=$!
   echo "Started uvicorn with PID $UVICORN_PID"
 }
 
+restart_uvicorn() {
+  stop_uvicorn
+  start_uvicorn
+}
+
 git pull
 install_requirements
+python init_db.py
 restart_uvicorn
 
 while true; do
@@ -48,6 +60,7 @@ while true; do
   if [[ "$old_head" != "$new_head" ]]; then
     echo "Repository updated from $old_head to $new_head"
     install_requirements
+    recreate_database
     restart_uvicorn
   fi
 done
