@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from emails import send_project_member_added_email
+from emails import send_project_member_added_email, send_project_member_removed_email
 
 app = FastAPI(title="Codex Activity App")
 load_dotenv()
@@ -18,6 +18,10 @@ load_dotenv()
 
 MENU = [("Home", "/"), ("Projects", "/projects"), ("Members", "/members"), ("Organization", "/organizations")]
 
+
+def project_url(project_id: int) -> str:
+    base_url = os.getenv("APP_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+    return f"{base_url}/projects/{project_id}"
 
 def get_connection() -> mysql.connector.MySQLConnection:
     return mysql.connector.connect(
@@ -493,9 +497,9 @@ def project_detail(project_id: int) -> HTMLResponse:
             (project_id,),
         )
     member_rows = "".join(
-        f"<tr><td><a href='/members/{m['id']}'>{html.escape(m['first_name'])} {html.escape(m['middle_name'] or '')} {html.escape(m['last_name'])}</a></td><td>{html.escape(m['email'])}</td></tr>"
+        f"<tr><td><a href='/members/{m['id']}'>{html.escape(m['first_name'])} {html.escape(m['middle_name'] or '')} {html.escape(m['last_name'])}</a></td><td>{html.escape(m['email'])}</td><td><form method='post' action='/projects/{project_id}/members/{m['id']}/remove' style='margin:0;'><button class='btn-danger' type='submit'>Remove</button></form></td></tr>"
         for m in project_members
-    ) or "<tr><td colspan='2' class='empty-row'>No eligible members assigned for this project's organization.</td></tr>"
+    ) or "<tr><td colspan='3' class='empty-row'>No eligible members assigned for this project's organization.</td></tr>"
     options = "".join(
         f"<option value='{m['id']}'>{html.escape(m['first_name'])} {html.escape(m['middle_name'] or '')} {html.escape(m['last_name'])}</option>"
         for m in available_members
@@ -524,7 +528,7 @@ def project_detail(project_id: int) -> HTMLResponse:
       </div>
       <div class='header' style='padding-top:0;'><div><h2 class='title' style='font-size:1.1rem;'>Members</h2></div></div>
       {selector}
-      <div class='table-wrap'><table><thead><tr><th>Name</th><th>Email</th></tr></thead><tbody>{member_rows}</tbody></table></div>
+      <div class='table-wrap'><table><thead><tr><th>Name</th><th>Email</th><th>Action</th></tr></thead><tbody>{member_rows}</tbody></table></div>
     """
     return HTMLResponse(page_shell("Project Detail", body))
 
@@ -846,9 +850,57 @@ def add_member_to_project(project_id: int, member_id: int = Form(...)) -> Redire
                     member_name=member_name,
                     project_name=project["name"],
                     organization_name=project.get("organization_name"),
+                    project_url=project_url(project_id),
                 )
             except Exception:
                 pass
+
+    return RedirectResponse(url=f"/projects/{project_id}", status_code=303)
+
+
+@app.post("/projects/{project_id}/members/{member_id}/remove")
+def remove_member_from_project(project_id: int, member_id: int) -> RedirectResponse:
+    ensure_schema()
+
+    project = fetch_one(
+        """
+        SELECT p.name, o.name AS organization_name
+        FROM projects p
+        LEFT JOIN organizations o ON o.id = p.organization_id
+        WHERE p.id = %s
+        """,
+        (project_id,),
+    )
+    member = fetch_one(
+        "SELECT first_name, middle_name, last_name, email FROM members WHERE id = %s",
+        (member_id,),
+    )
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "DELETE FROM project_members WHERE project_id = %s AND member_id = %s",
+        (project_id, member_id),
+    )
+    removed = cursor.rowcount > 0
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    if removed and project and member and member.get("email"):
+        member_name = " ".join(
+            part for part in [member["first_name"], member.get("middle_name") or "", member["last_name"]] if part
+        )
+        try:
+            send_project_member_removed_email(
+                to_email=member["email"],
+                member_name=member_name,
+                project_name=project["name"],
+                organization_name=project.get("organization_name"),
+                project_url=project_url(project_id),
+            )
+        except Exception:
+            pass
 
     return RedirectResponse(url=f"/projects/{project_id}", status_code=303)
 

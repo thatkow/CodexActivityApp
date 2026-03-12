@@ -86,9 +86,10 @@ SMTP_USER=your_smtp_user
 SMTP_PASSWORD=your_smtp_password
 SMTP_FROM=no-reply@example.com
 SMTP_USE_TLS=true
+APP_BASE_URL=http://127.0.0.1:8000
 ```
 
-SMTP variables are used when adding a member to a project:
+SMTP variables are used when adding/removing a member from a project:
 
 - `SMTP_HOST` (required to enable email sending)
 - `SMTP_PORT` (default `587`)
@@ -96,6 +97,7 @@ SMTP variables are used when adding a member to a project:
 - `SMTP_PASSWORD` (optional)
 - `SMTP_FROM` (required to enable email sending)
 - `SMTP_USE_TLS` (`true`/`false`, default `true`)
+- `APP_BASE_URL` (default `http://127.0.0.1:8000`, used to generate project links in emails)
 
 ## 5) Run locally
 
