@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Organization Details</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <div class="header">
+          <div>
+            <h1 id="orgTitle">Organization</h1>
+            <p><a href="/organizations" class="btn secondary">← Back to Organizations</a></p>
+          </div>
+          <div class="actions">
+            <button class="btn-primary" id="openDialogBtn">Create Project</button>
+          </div>
+        </div>
+
+        <p class="status" id="status"></p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Description</th><th>Date Created</th></tr>
+            </thead>
+            <tbody id="projectBody"></tbody>
+          </table>
+          <div class="empty" id="emptyState" hidden>No projects for this organization.</div>
+        </div>
+      </div>
+    </div>
+
+    <dialog id="projectDialog">
+      <div class="dialog-header"><h2>Create Project for Organization</h2></div>
+      <form id="projectForm">
+        <label>Name <input id="name" type="text" required maxlength="255" /></label>
+        <label>Description <textarea id="description" required maxlength="1000"></textarea></label>
+        <label>Date Created <input id="dateCreated" type="date" required /></label>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" id="cancelBtn">Cancel</button>
+          <button type="submit" class="btn-primary">Save Project</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script>
+      const orgId = Number(window.location.pathname.split("/").pop());
+      const orgTitle = document.getElementById("orgTitle");
+      const projectBody = document.getElementById("projectBody");
+      const emptyState = document.getElementById("emptyState");
+      const status = document.getElementById("status");
+      const dialog = document.getElementById("projectDialog");
+      const form = document.getElementById("projectForm");
+      const openDialogBtn = document.getElementById("openDialogBtn");
+      const cancelBtn = document.getElementById("cancelBtn");
+      const dateInput = document.getElementById("dateCreated");
+
+      const today = () => new Date().toISOString().slice(0, 10);
+      const setStatus = (msg) => (status.textContent = msg);
+
+      function renderRows(projects) {
+        projectBody.innerHTML = "";
+        if (!projects.length) {
+          emptyState.hidden = false;
+          return;
+        }
+        emptyState.hidden = true;
+        for (const project of projects) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${project.name}</td><td>${project.description}</td><td>${project.date_created}</td>`;
+          projectBody.appendChild(tr);
+        }
+      }
+
+      async function loadOrganization() {
+        const res = await fetch(`/api/organizations/${orgId}`);
+        if (!res.ok) {
+          setStatus("Organization not found.");
+          return;
+        }
+        const org = await res.json();
+        orgTitle.textContent = `${org.name} (ID: ${org.id})`;
+      }
+
+      async function loadProjects() {
+        const res = await fetch(`/api/organizations/${orgId}/projects`);
+        if (!res.ok) {
+          setStatus("Unable to load projects for organization.");
+          return;
+        }
+        const projects = await res.json();
+        renderRows(projects);
+      }
+
+      openDialogBtn.addEventListener("click", () => {
+        form.reset();
+        dateInput.value = today();
+        dialog.showModal();
+      });
+      cancelBtn.addEventListener("click", () => dialog.close());
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const payload = {
+          name: document.getElementById("name").value.trim(),
+          description: document.getElementById("description").value.trim(),
+          date_created: dateInput.value || today(),
+        };
+        const res = await fetch(`/api/organizations/${orgId}/projects`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) return setStatus("Failed to create project.");
+        dialog.close();
+        setStatus("Project created and linked to organization.");
+        await loadProjects();
+      });
+
+      dateInput.value = today();
+      loadOrganization();
+      loadProjects();
+    </script>
+  </body>
+</html>

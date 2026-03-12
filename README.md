@@ -1,26 +1,38 @@
 # CodexActivityApp
 
-A FastAPI + MySQL business-style project tracker UI.
+A FastAPI + MySQL business-style dashboard with dedicated **Projects** and **Organization** sections.
 
 ## Features
 
-- `/` serves a business application interface with a projects table:
-  - **Name**
-  - **Description**
-  - **Date Created**
-- Top-right controls include:
-  - **Add Project** button (opens dialog)
-  - **Delete Selected** button
-- New projects default **Date Created** to today's date.
-- Data is stored in a local MySQL database.
+- `/` dashboard page with tiles:
+  - **Projects** (`/projects`)
+  - **Organization** (`/organizations`)
+- `/projects` page:
+  - table columns: **Name**, **Description**, **Date Created**, **Organization**
+  - top-right **Add Project** + **Delete Selected** buttons
+  - add form defaults Date Created to today
+  - projects can be assigned to an organization
+  - menu item to go back to `/`
+- `/organizations` page:
+  - table columns: **Name**, **Address (optional)**, **ABN (optional)**
+  - top-right **Add Organization** + **Delete Selected** buttons
+  - organization rows link to `/organizations/{id}`
+- `/organizations/{id}` page:
+  - single **Create Project** button that opens a form dialog
+  - created projects are automatically associated with that organization
+- Organizations and projects are persisted to local MySQL.
 
 ## Project files
 
-- `app.py` - FastAPI app and API endpoints.
-- `static/index.html` - UI, styling, and browser-side logic.
-- `recreate_db.py` - Drops/recreates DB tables used by the app.
+- `app.py` - FastAPI routes, SQLAlchemy models, API endpoints.
+- `recreate_db.py` - drop/recreate schema tables.
+- `static/home.html` - dashboard tiles page.
+- `static/projects.html` - projects page.
+- `static/organizations.html` - organizations page.
+- `static/organization_detail.html` - organization detail + linked project creation.
+- `static/styles.css` - shared app styling.
 - `requirements.txt` - Python dependencies.
-- `auto_update_run.sh` - Auto pull/reload script.
+- `auto_update_run.sh` - auto pull/reload/recreate script.
 
 ## 1) MySQL setup (localhost)
 
@@ -33,7 +45,7 @@ GRANT ALL PRIVILEGES ON codex_activity.* TO 'codex_app'@'localhost';
 FLUSH PRIVILEGES;
 ```
 
-If your app connects through `127.0.0.1`, also allow that host:
+If you connect through `127.0.0.1`, also grant that host:
 
 ```sql
 CREATE USER 'codex_app'@'127.0.0.1' IDENTIFIED BY 'codex_password';
@@ -42,8 +54,6 @@ FLUSH PRIVILEGES;
 ```
 
 ## 2) Python setup with `venv`
-
-From the project root:
 
 ```bash
 python3 -m venv .venv
@@ -61,19 +71,19 @@ export DB_PORT=3306
 export DB_NAME=codex_activity
 ```
 
-Create/recreate the schema:
+Create/recreate schema:
 
 ```bash
 python recreate_db.py
 ```
 
-## 3) Run the app manually
+## 3) Run manually
 
 ```bash
 uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
-Open: `http://127.0.0.1:8000`
+Open `http://127.0.0.1:8000`.
 
 ## Auto-update/restart script
 
@@ -83,18 +93,4 @@ Run:
 ./auto_update_run.sh
 ```
 
-The script will:
-
-1. Perform an initial `git pull --ff-only`.
-2. Ensure `.venv` exists and activate it.
-3. Install/update dependencies from `requirements.txt`.
-4. **Recreate the database schema** (`python recreate_db.py`).
-5. Start `uvicorn`.
-6. Every 10 seconds, run `git pull --ff-only`.
-7. If code changes are detected, it will:
-   - stop running `uvicorn`,
-   - reinstall dependencies,
-   - **recreate the database schema**,
-   - restart `uvicorn`.
-
-Use `Ctrl+C` to stop the script; it will also stop the running `uvicorn` process.
+It performs initial `git pull`, venv activation, requirements install, DB recreation, and uvicorn launch. Every 10 seconds it pulls changes; on new commits it stops uvicorn, reinstalls dependencies, recreates DB, and restarts uvicorn.

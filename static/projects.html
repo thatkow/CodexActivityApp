@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Projects</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <div class="header">
+          <div>
+            <h1>Projects</h1>
+            <p><a href="/" class="btn secondary">← Back to Dashboard</a></p>
+          </div>
+          <div class="actions">
+            <button class="btn-primary" id="openDialogBtn">Add Project</button>
+            <button class="btn-danger" id="deleteBtn" disabled>Delete Selected</button>
+          </div>
+        </div>
+
+        <p class="status" id="status"></p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Date Created</th>
+                <th>Organization</th>
+              </tr>
+            </thead>
+            <tbody id="projectBody"></tbody>
+          </table>
+          <div class="empty" id="emptyState" hidden>No projects yet.</div>
+        </div>
+      </div>
+    </div>
+
+    <dialog id="projectDialog">
+      <div class="dialog-header"><h2>Create Project</h2></div>
+      <form id="projectForm">
+        <label>Name <input id="name" type="text" required maxlength="255" /></label>
+        <label>Description <textarea id="description" required maxlength="1000"></textarea></label>
+        <label>Date Created <input id="dateCreated" type="date" required /></label>
+        <label>
+          Organization
+          <select id="organizationId">
+            <option value="">Unassigned</option>
+          </select>
+        </label>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" id="cancelBtn">Cancel</button>
+          <button type="submit" class="btn-primary">Save Project</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script>
+      const projectBody = document.getElementById("projectBody");
+      const emptyState = document.getElementById("emptyState");
+      const status = document.getElementById("status");
+      const dialog = document.getElementById("projectDialog");
+      const form = document.getElementById("projectForm");
+      const openDialogBtn = document.getElementById("openDialogBtn");
+      const cancelBtn = document.getElementById("cancelBtn");
+      const deleteBtn = document.getElementById("deleteBtn");
+      const dateInput = document.getElementById("dateCreated");
+      const organizationSelect = document.getElementById("organizationId");
+      let selectedProjectId = null;
+
+      const today = () => new Date().toISOString().slice(0, 10);
+      const setStatus = (msg) => (status.textContent = msg);
+
+      async function loadOrganizations() {
+        const res = await fetch("/api/organizations");
+        if (!res.ok) return;
+        const orgs = await res.json();
+        organizationSelect.innerHTML = '<option value="">Unassigned</option>';
+        for (const org of orgs) {
+          const option = document.createElement("option");
+          option.value = String(org.id);
+          option.textContent = org.name;
+          organizationSelect.appendChild(option);
+        }
+      }
+
+      function renderRows(projects) {
+        projectBody.innerHTML = "";
+        if (!projects.length) {
+          emptyState.hidden = false;
+          selectedProjectId = null;
+          deleteBtn.disabled = true;
+          return;
+        }
+        emptyState.hidden = true;
+        for (const project of projects) {
+          const tr = document.createElement("tr");
+          if (project.id === selectedProjectId) tr.classList.add("selected");
+          tr.innerHTML = `<td>${project.name}</td><td>${project.description}</td><td>${project.date_created}</td><td>${project.organization_name || "-"}</td>`;
+          tr.addEventListener("click", () => {
+            selectedProjectId = project.id;
+            deleteBtn.disabled = false;
+            renderRows(projects);
+          });
+          projectBody.appendChild(tr);
+        }
+      }
+
+      async function loadProjects() {
+        const res = await fetch("/api/projects");
+        if (!res.ok) return setStatus("Unable to load projects.");
+        const projects = await res.json();
+        if (!projects.some((p) => p.id === selectedProjectId)) {
+          selectedProjectId = null;
+          deleteBtn.disabled = true;
+        }
+        renderRows(projects);
+      }
+
+      openDialogBtn.addEventListener("click", async () => {
+        form.reset();
+        dateInput.value = today();
+        await loadOrganizations();
+        dialog.showModal();
+      });
+      cancelBtn.addEventListener("click", () => dialog.close());
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const orgValue = organizationSelect.value;
+        const payload = {
+          name: document.getElementById("name").value.trim(),
+          description: document.getElementById("description").value.trim(),
+          date_created: dateInput.value || today(),
+          organization_id: orgValue ? Number(orgValue) : null,
+        };
+        const res = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+        if (!res.ok) return setStatus("Failed to create project.");
+        dialog.close();
+        setStatus("Project created.");
+        await loadProjects();
+      });
+
+      deleteBtn.addEventListener("click", async () => {
+        if (!selectedProjectId) return;
+        if (!window.confirm("Delete selected project?")) return;
+        const res = await fetch(`/api/projects/${selectedProjectId}`, { method: "DELETE" });
+        if (!res.ok) return setStatus("Failed to delete project.");
+        selectedProjectId = null;
+        deleteBtn.disabled = true;
+        setStatus("Project deleted.");
+        await loadProjects();
+      });
+
+      dateInput.value = today();
+      loadProjects();
+    </script>
+  </body>
+</html>

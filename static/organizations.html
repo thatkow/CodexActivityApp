@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Organizations</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <div class="header">
+          <div>
+            <h1>Organizations</h1>
+            <p><a href="/" class="btn secondary">← Back to Dashboard</a></p>
+          </div>
+          <div class="actions">
+            <button class="btn-primary" id="openDialogBtn">Add Organization</button>
+            <button class="btn-danger" id="deleteBtn" disabled>Delete Selected</button>
+          </div>
+        </div>
+
+        <p class="status" id="status"></p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Address</th><th>ABN</th></tr>
+            </thead>
+            <tbody id="orgBody"></tbody>
+          </table>
+          <div class="empty" id="emptyState" hidden>No organizations yet.</div>
+        </div>
+      </div>
+    </div>
+
+    <dialog id="orgDialog">
+      <div class="dialog-header"><h2>Create Organization</h2></div>
+      <form id="orgForm">
+        <label>Name <input id="name" type="text" required maxlength="255" /></label>
+        <label>Address (optional) <input id="address" type="text" maxlength="255" /></label>
+        <label>ABN (optional) <input id="abn" type="text" maxlength="64" /></label>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" id="cancelBtn">Cancel</button>
+          <button type="submit" class="btn-primary">Save Organization</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script>
+      const orgBody = document.getElementById("orgBody");
+      const emptyState = document.getElementById("emptyState");
+      const status = document.getElementById("status");
+      const dialog = document.getElementById("orgDialog");
+      const form = document.getElementById("orgForm");
+      const openDialogBtn = document.getElementById("openDialogBtn");
+      const cancelBtn = document.getElementById("cancelBtn");
+      const deleteBtn = document.getElementById("deleteBtn");
+      let selectedOrgId = null;
+
+      const setStatus = (msg) => (status.textContent = msg);
+
+      function renderRows(orgs) {
+        orgBody.innerHTML = "";
+        if (!orgs.length) {
+          emptyState.hidden = false;
+          selectedOrgId = null;
+          deleteBtn.disabled = true;
+          return;
+        }
+        emptyState.hidden = true;
+        for (const org of orgs) {
+          const tr = document.createElement("tr");
+          if (org.id === selectedOrgId) tr.classList.add("selected");
+          tr.innerHTML = `<td><a href="/organizations/${org.id}">${org.name}</a></td><td>${org.address || "-"}</td><td>${org.abn || "-"}</td>`;
+          tr.addEventListener("click", () => {
+            selectedOrgId = org.id;
+            deleteBtn.disabled = false;
+            renderRows(orgs);
+          });
+          orgBody.appendChild(tr);
+        }
+      }
+
+      async function loadOrganizations() {
+        const res = await fetch("/api/organizations");
+        if (!res.ok) return setStatus("Unable to load organizations.");
+        const orgs = await res.json();
+        if (!orgs.some((o) => o.id === selectedOrgId)) {
+          selectedOrgId = null;
+          deleteBtn.disabled = true;
+        }
+        renderRows(orgs);
+      }
+
+      openDialogBtn.addEventListener("click", () => {
+        form.reset();
+        dialog.showModal();
+      });
+      cancelBtn.addEventListener("click", () => dialog.close());
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const payload = {
+          name: document.getElementById("name").value.trim(),
+          address: document.getElementById("address").value.trim() || null,
+          abn: document.getElementById("abn").value.trim() || null,
+        };
+        const res = await fetch("/api/organizations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+        if (!res.ok) return setStatus("Failed to create organization.");
+        dialog.close();
+        setStatus("Organization created.");
+        await loadOrganizations();
+      });
+
+      deleteBtn.addEventListener("click", async () => {
+        if (!selectedOrgId) return;
+        if (!window.confirm("Delete selected organization?")) return;
+        const res = await fetch(`/api/organizations/${selectedOrgId}`, { method: "DELETE" });
+        if (!res.ok) return setStatus("Failed to delete organization.");
+        selectedOrgId = null;
+        deleteBtn.disabled = true;
+        setStatus("Organization deleted.");
+        await loadOrganizations();
+      });
+
+      loadOrganizations();
+    </script>
+  </body>
+</html>
