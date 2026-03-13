@@ -29,12 +29,45 @@ FLUSH PRIVILEGES;
 
 ## 2) Configure app environment variables
 
-Optional (defaults are already set in `main.py`):
+Optional (defaults are already set in `main.py`). You can configure either with exported vars or a local `.env` file (auto-loaded on startup):
 
 ```bash
 export DATABASE_URL='mysql+pymysql://codex_app:codex_app_password@127.0.0.1:3306/codex_activity_app'
 export APP_SECRET_KEY='replace-with-a-long-random-secret'
+export PANEL_ADMIN='admin'
+export PANEL_ADMIN_PW='password'
+export APP_BASE_URL='http://127.0.0.1:8000'
+
+# SMTP settings for submission notifications
+export SMTP_HOST='smtp.example.com'
+export SMTP_PORT='587'
+export SMTP_USER='smtp-user'
+export SMTP_PASSWORD='smtp-password'
+export SMTP_FROM='no-reply@example.com'
+export SMTP_USE_TLS='true'
 ```
+
+Example `.env`:
+
+```env
+DATABASE_URL=mysql+pymysql://codex_app:codex_app_password@127.0.0.1:3306/codex_activity_app
+APP_SECRET_KEY=replace-with-a-long-random-secret
+PANEL_ADMIN=admin
+PANEL_ADMIN_PW=password
+APP_BASE_URL=http://127.0.0.1:8000
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=smtp-user
+SMTP_PASSWORD=smtp-password
+SMTP_FROM=no-reply@example.com
+SMTP_USE_TLS=true
+```
+
+
+## Admin panel + subscribers
+- Open `/admin` and log in with `PANEL_ADMIN` / `PANEL_ADMIN_PW`.
+- Use the **Subscribers** button in the admin page to manage notification recipients.
+- When a marker panel is submitted, the app sends an email to all subscribers with a direct link to that submission in the admin view.
 
 ## 3) Run app
 
