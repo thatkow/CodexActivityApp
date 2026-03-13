@@ -10,7 +10,7 @@ from typing import Generator
 import html
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import DateTime, ForeignKey, LargeBinary, String, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
@@ -344,7 +344,7 @@ def marker_template() -> HTMLResponse:
 
 
 @app.get("/marker-submission", response_class=HTMLResponse)
-def marker_submission_page(request: Request) -> HTMLResponse | RedirectResponse:
+def marker_submission_page(request: Request) -> Response:
     user = require_user(request)
     if user is None:
         return RedirectResponse(url="/", status_code=303)
@@ -374,7 +374,7 @@ def marker_submission_page(request: Request) -> HTMLResponse | RedirectResponse:
 async def validate_marker_file(
     request: Request,
     marker_file: UploadFile = File(...),
-) -> HTMLResponse | RedirectResponse:
+) -> Response:
     user = require_user(request)
     if user is None:
         return RedirectResponse(url="/", status_code=303)
@@ -502,7 +502,7 @@ def submit_marker_panel(
 
 
 @app.post("/login")
-def login(email: str = Form(...), password: str = Form(...), organisation_id: int = Form(...)) -> HTMLResponse | RedirectResponse:
+def login(email: str = Form(...), password: str = Form(...), organisation_id: int = Form(...)) -> Response:
     with SessionLocal() as db:
         orgs = db.scalars(select(Organisation).order_by(Organisation.name)).all()
         options = "".join([f'<option value="{org.id}">{org.name}</option>' for org in orgs])
@@ -531,7 +531,7 @@ def register(
     password: str = Form(...),
     organisation_id: str = Form(...),
     new_organisation_name: str = Form(""),
-) -> HTMLResponse | RedirectResponse:
+) -> Response:
     normalized_email = email.strip().lower()
     if len(password) < 8:
         with SessionLocal() as db:
