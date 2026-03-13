@@ -19,5 +19,12 @@ echo "Installing dependencies from requirements.txt..."
 pip install --upgrade pip
 pip install -r requirements.txt
 
+echo "Resetting database tables..."
+python - <<'PY'
+from main import init_database
+init_database(reset=True)
+print("Database tables dropped and recreated.")
+PY
+
 echo "Starting uvicorn server..."
 exec uvicorn main:app --host 0.0.0.0 --port 8000 --reload
