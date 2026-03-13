@@ -16,7 +16,7 @@ import html
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import DateTime, ForeignKey, Integer, LargeBinary, String, create_engine, select
+from sqlalchemy import DateTime, ForeignKey, Integer, String, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 
@@ -48,7 +48,6 @@ class Submission(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    file_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     date_submitted: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     project_coordinator_name: Mapped[str] = mapped_column(String(255), nullable=False)
     project_coordinator_email: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -223,14 +222,21 @@ def run_submission_checker_in_background(submission_id: int) -> None:
             log_file.write(f"=== Checker run finished at {datetime.utcnow().isoformat()}Z ===\n")
 
 
-def trigger_submission_checker(submission_id: int, marker_bytes: bytes, reset_output: bool = False) -> None:
+def trigger_submission_checker(submission_id: int, reset_output: bool = False) -> None:
     marker_path = submission_marker_file_path(submission_id)
     output_dir = submission_output_dir(submission_id)
     marker_path.parent.mkdir(parents=True, exist_ok=True)
     if reset_output and output_dir.exists():
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    marker_path.write_bytes(marker_bytes)
+    if not marker_path.exists():
+        with SessionLocal() as db:
+            submission = db.get(Submission, submission_id)
+            if submission:
+                submission.checker_exit_code = 1
+                submission.checker_container_id = None
+                db.commit()
+        return
 
     with SessionLocal() as db:
         submission = db.get(Submission, submission_id)
@@ -714,7 +720,6 @@ def submit_marker_panel(
 
     submission = Submission(
         file_name=file_name,
-        file_blob=base64.b64decode(file_b64.encode("utf-8")),
         project_coordinator_name=project_coordinator_name.strip(),
         project_coordinator_email=project_coordinator_email.strip(),
         marker_design_contact_name=marker_design_contact_name.strip(),
@@ -730,7 +735,12 @@ def submit_marker_panel(
         db.refresh(submission)
         subscribers = db.scalars(select(Subscriber).order_by(Subscriber.email)).all()
 
-    trigger_submission_checker(submission.id, submission.file_blob)
+    marker_bytes = base64.b64decode(file_b64.encode("utf-8"))
+    marker_path = submission_marker_file_path(submission.id)
+    marker_path.parent.mkdir(parents=True, exist_ok=True)
+    marker_path.write_bytes(marker_bytes)
+
+    trigger_submission_checker(submission.id)
 
     submission_url = f"{APP_BASE_URL.rstrip('/')}/admin/submissions/{quote(str(submission.id))}"
     recipient_emails = [subscriber.email for subscriber in subscribers]
@@ -1085,7 +1095,7 @@ def admin_rerun_submission_checker(request: Request, submission_id: int) -> Resp
     if not submission:
         return Response(status_code=404)
 
-    trigger_submission_checker(submission_id, submission.file_blob, reset_output=True)
+    trigger_submission_checker(submission_id, reset_output=True)
     return RedirectResponse(url=f"/admin/submissions/{submission_id}", status_code=303)
 
 
@@ -1098,9 +1108,12 @@ def admin_download_marker_file(request: Request, submission_id: int) -> Response
         submission = db.get(Submission, submission_id)
     if not submission:
         return Response(status_code=404)
+    marker_path = submission_marker_file_path(submission_id)
+    if not marker_path.exists():
+        return Response(status_code=404)
 
     return Response(
-        content=submission.file_blob,
+        content=marker_path.read_bytes(),
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{submission.file_name}"'},
     )

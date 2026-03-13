@@ -74,6 +74,7 @@ SUBMISSION_CHECKER_IMAGE=diversityarraystechnology/submission_checking
 - Open `/admin` and log in with `PANEL_ADMIN` / `PANEL_ADMIN_PW`.
 - Use the **Subscribers** button in the admin page to manage notification recipients.
 - When a marker panel is submitted, the app sends an email to all subscribers with a direct link to that submission in the admin view.
+- The uploaded marker file is stored on disk as `$SUBMISSION_WORKING_DIR/<submission_id>/submission.csv` (not in the database blob), while the original filename is kept for downloads.
 - Submission checking is started in a background Docker container; stdout/stderr are captured to `docker.log` inside each submission output folder.
 - The submission detail page shows checker state (running container in yellow, failure with ❌ icon), links to output artifacts, and a **Re-run checker** button that wipes previous files.
 - If your SMTP relay on port 25 does not use STARTTLS, set `SMTP_USE_TLS=false`.
