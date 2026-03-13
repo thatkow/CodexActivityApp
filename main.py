@@ -4,6 +4,7 @@ import hmac
 import html
 import os
 import secrets
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import Generator
 from urllib.parse import quote
@@ -12,6 +13,8 @@ from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import DateTime, ForeignKey, LargeBinary, String, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
+
+from emails import send_submission_notification
 
 
 class Base(DeclarativeBase):
@@ -59,6 +62,31 @@ class Submission(Base):
     submitted_by: Mapped[User] = relationship()
 
 
+class Subscriber(Base):
+    __tablename__ = "subscribers"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+
+
+def load_dotenv(path: str = ".env") -> None:
+    env_path = Path(path)
+    if not env_path.exists():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        os.environ.setdefault(key, value)
+
+
+load_dotenv()
+
+
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "mysql+pymysql://codex_app:codex_app_password@127.0.0.1:3306/codex_activity_app",
@@ -66,6 +94,13 @@ DATABASE_URL = os.getenv(
 SECRET_KEY = os.getenv("APP_SECRET_KEY", "change-this-in-production")
 PANEL_ADMIN = os.getenv("PANEL_ADMIN", "admin")
 PANEL_ADMIN_PW = os.getenv("PANEL_ADMIN_PW", "password")
+APP_BASE_URL = os.getenv("APP_BASE_URL", "http://127.0.0.1:8000")
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() in {"1", "true", "yes", "on"}
+SMTP_SENDER = os.getenv("SMTP_SENDER", "")
 
 REQUIRED_MARKER_COLUMNS = {
     "MarkerName",
@@ -295,6 +330,51 @@ def submission_contacts_form(token: str, filename: str) -> str:
     )
 
 
+
+
+def subscribers_form(rows: str, error: str = "") -> str:
+    error_html = f'<div class="error">{error}</div>' if error else ""
+    return page_template(
+        "Subscribers",
+        f"""
+        <div class="header">Subscribers</div>
+        <div class="content">
+          <div class="top-actions">
+            <h2>Notification Recipients</h2>
+            <a class="link" href="/admin/submissions">Back to submissions</a>
+          </div>
+          {error_html}
+          <form method="post" action="/admin/subscribers/add">
+            <label for="subscriber_email">Add Subscriber Email</label>
+            <input id="subscriber_email" name="email" type="email" required />
+            <button type="submit">Add Subscriber</button>
+          </form>
+          <h3 style="margin-top: 20px">Current Subscribers</h3>
+          <table><thead><tr><th>Email</th><th>Action</th></tr></thead><tbody>{rows}</tbody></table>
+        </div>
+        """,
+    )
+
+
+def notify_subscribers(db: Session, submission_id: int) -> None:
+    recipients = [s.email for s in db.scalars(select(Subscriber).order_by(Subscriber.email)).all()]
+    if not recipients or not SMTP_HOST or not SMTP_SENDER:
+        return
+
+    submission_url = f"{APP_BASE_URL.rstrip('/')}/admin/submissions/{submission_id}"
+    send_submission_notification(
+        smtp_host=SMTP_HOST,
+        smtp_port=SMTP_PORT,
+        smtp_username=SMTP_USERNAME,
+        smtp_password=SMTP_PASSWORD,
+        smtp_use_tls=SMTP_USE_TLS,
+        sender_email=SMTP_SENDER,
+        recipients=recipients,
+        submission_id=submission_id,
+        submission_url=submission_url,
+    )
+
+
 @app.on_event("startup")
 def startup() -> None:
     Base.metadata.create_all(bind=engine)
@@ -511,6 +591,8 @@ def submit_marker_panel_finalize(
         )
         db.add(submission)
         db.commit()
+        db.refresh(submission)
+        notify_subscribers(db, submission.id)
 
     PENDING_UPLOADS.pop(token, None)
     return RedirectResponse(url="/?submission_success=1", status_code=303)
@@ -578,11 +660,78 @@ def admin_submissions(request: Request) -> HTMLResponse | RedirectResponse:
             f"""
             <div class=\"header\">Submissions</div>
             <div class=\"content\">
+              <div class=\"top-actions\">
+                <a class=\"action\" href=\"/admin/subscribers\">Subscribers</a>
+                <form method=\"post\" action=\"/admin/logout\" style=\"margin:0\"><button type=\"submit\" class=\"logout\">Logout</button></form>
+              </div>
               <table><thead><tr><th>ID</th><th>File</th><th>Project Coordinator</th><th>Submitted At</th></tr></thead><tbody>{rows}</tbody></table>
             </div>
             """,
         )
     )
+
+
+@app.get("/admin/subscribers", response_class=HTMLResponse, response_model=None)
+def admin_subscribers(request: Request) -> HTMLResponse | RedirectResponse:
+    if not is_admin_logged_in(request):
+        return RedirectResponse(url="/admin", status_code=303)
+
+    with SessionLocal() as db:
+        subscribers = db.scalars(select(Subscriber).order_by(Subscriber.email)).all()
+
+    rows = "".join(
+        f"<tr><td>{html.escape(sub.email)}</td><td><form method='post' action='/admin/subscribers/remove' style='margin:0'><input type='hidden' name='subscriber_id' value='{sub.id}' /><button type='submit'>Remove</button></form></td></tr>"
+        for sub in subscribers
+    )
+    if not rows:
+        rows = "<tr><td colspan='2'>No subscribers configured.</td></tr>"
+
+    return HTMLResponse(subscribers_form(rows))
+
+
+@app.post("/admin/subscribers/add", response_model=None)
+def admin_add_subscriber(request: Request, email: str = Form(...)) -> HTMLResponse | RedirectResponse:
+    if not is_admin_logged_in(request):
+        return RedirectResponse(url="/admin", status_code=303)
+
+    normalized_email = email.strip().lower()
+    if not normalized_email or "@" not in normalized_email:
+        with SessionLocal() as db:
+            subscribers = db.scalars(select(Subscriber).order_by(Subscriber.email)).all()
+        rows = "".join(
+            f"<tr><td>{html.escape(sub.email)}</td><td><form method='post' action='/admin/subscribers/remove' style='margin:0'><input type='hidden' name='subscriber_id' value='{sub.id}' /><button type='submit'>Remove</button></form></td></tr>"
+            for sub in subscribers
+        ) or "<tr><td colspan='2'>No subscribers configured.</td></tr>"
+        return HTMLResponse(subscribers_form(rows, "Enter a valid email address."), status_code=400)
+
+    with SessionLocal() as db:
+        existing = db.scalar(select(Subscriber).where(Subscriber.email == normalized_email))
+        if not existing:
+            db.add(Subscriber(email=normalized_email))
+            db.commit()
+
+    return RedirectResponse(url="/admin/subscribers", status_code=303)
+
+
+@app.post("/admin/subscribers/remove", response_model=None)
+def admin_remove_subscriber(request: Request, subscriber_id: int = Form(...)) -> RedirectResponse:
+    if not is_admin_logged_in(request):
+        return RedirectResponse(url="/admin", status_code=303)
+
+    with SessionLocal() as db:
+        subscriber = db.get(Subscriber, subscriber_id)
+        if subscriber:
+            db.delete(subscriber)
+            db.commit()
+
+    return RedirectResponse(url="/admin/subscribers", status_code=303)
+
+
+@app.post("/admin/logout")
+def admin_logout() -> RedirectResponse:
+    response = RedirectResponse(url="/admin", status_code=303)
+    response.delete_cookie("admin_session")
+    return response
 
 
 @app.get("/admin/submissions/{submission_id}", response_class=HTMLResponse, response_model=None)
