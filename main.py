@@ -1,14 +1,17 @@
 import base64
+import csv
 import hashlib
 import hmac
+import io
 import os
 import secrets
+from datetime import datetime
 from typing import Generator
 import html
 
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import ForeignKey, String, create_engine, select
+from sqlalchemy import DateTime, ForeignKey, LargeBinary, String, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 
@@ -34,6 +37,23 @@ class User(Base):
     organisation: Mapped[Organisation] = relationship(back_populates="users")
 
 
+class Submission(Base):
+    __tablename__ = "submissions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    date_submitted: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    project_coordinator_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    project_coordinator_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    marker_design_contact_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    marker_design_contact_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    product_contact_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    product_contact_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    tg_contact_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    tg_contact_email: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "mysql+pymysql://codex_app:codex_app_password@127.0.0.1:3306/codex_activity_app",
@@ -44,6 +64,26 @@ engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 app = FastAPI(title="Codex Activity App")
+
+REQUIRED_MARKER_COLUMNS = {
+    "MarkerName",
+    "TargetSequence",
+    "ReferenceGenome",
+    "Chrom",
+    "ChromPosPhysical",
+    "ChromPosGenetic",
+    "VariantAllelesDef",
+    "MarkerType",
+    "EssentialMarker",
+    "MinorAlleleFrequency",
+    "Quality",
+    "Comments",
+}
+
+EXAMPLE_MARKER_FILE = """MarkerName,TargetSequence,ReferenceGenome,Chrom,ChromPosPhysical,ChromPosGenetic,VariantAllelesDef,MarkerType,EssentialMarker,MinorAlleleFrequency,Quality,Comments
+Chr01_20858452,GTTCTTTGGGTACTGTAGATCCAATCCATCACTGTTTTAAAAGGAGAATATTTCATTCATTGATGATATGCAGGAAGATGTGTTGGAAAGAGCCAAAAAAGCTAAGGAGAAAGCAGCACGGGAGGCCATGGAGGCACAAGGACTAATTCC[A/G]AAGTCTACTGTAGTAGATACACCAGCAACTGATAGTGTTGATTCTGTTACTGCATCATCAACGGTCAGTGAGATTAGTGCTGCAGATGCATCCTCATTGTCTAGTCCGACTACTCCCATGTCCCAGTCATATAGAGGTCCTGCTGATAAG,Castanea dentata v1.1,Chr01,20858452,72.74810491,[A/G],SNP,NO,0.350817236,7,
+Chr01_21504745,AGATTTTCACTTCCCGCAGCAGATAAGCCTTAGACAACGGTATGTTTATCCATACTATATGCACATCATAGATTTCTTTTCTATTTTTTTAGGTGGTGGAAAAATGGAATTAGCTATTATTTCACTTCTGGAACTGCATCTGCTGTCTAC[G/A]AAATCAGCTACTACCTCTAAACAGATTAATTATAGAAGATTGCGTTGAGTTAAATAGGTAATGATTTAGATTGTCTTAAGTTAATATGTAATGATTCAGTTTCTTTTGCTGCAGGTATGCATTGTTGGGTAACAGTTTAAGTATAGCAGT,Castanea dentata v1.1,Chr01,21504745,73.21579093,[G/A],SNP,NO,0.453194651,7,
+"""
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -259,27 +299,206 @@ def home(request: Request) -> HTMLResponse:
         ).all()
 
         member_items = "".join(f"<li>{html.escape(member.email)}</li>" for member in members)
+        success_dialog = ""
+        if request.query_params.get("submission") == "success":
+            success_dialog = "<script>alert(\"Submission Successful! We'll get back to you in a few days\");</script>"
         return HTMLResponse(
             page_template(
-                "Dashboard",
+                "Panel Submission Portal",
                 f"""
                 <div class=\"header\">Organisation: {html.escape(user.organisation.name)} </div>
                 <div class=\"content\">
                   <div class=\"top-actions\">
                     <div>
-                      <h2>Welcome {html.escape(user.email)}</h2>
+                      <h2>Panel Submission Portal</h2>
+                      <p>Welcome {html.escape(user.email)}</p>
                       <p class=\"muted\">Logged into your organisation workspace.</p>
                     </div>
                     <form method=\"post\" action=\"/logout\" style=\"margin:0\">
                       <button type=\"submit\" class=\"logout\">Logout</button>
                     </form>
                   </div>
+                  <form method=\"get\" action=\"/marker-submission\">
+                    <button type=\"submit\">Submit Marker Panel</button>
+                  </form>
                   <h3>Members</h3>
                   <ul>{member_items}</ul>
                 </div>
+                {success_dialog}
                 """,
             )
         )
+
+
+def require_user(request: Request) -> User | None:
+    user_id = parse_session_value(request.cookies.get("session"))
+    if user_id is None:
+        return None
+    with SessionLocal() as db:
+        return db.get(User, user_id)
+
+
+@app.get("/marker-template.csv")
+def marker_template() -> HTMLResponse:
+    return HTMLResponse(content=EXAMPLE_MARKER_FILE, media_type="text/csv")
+
+
+@app.get("/marker-submission", response_class=HTMLResponse)
+def marker_submission_page(request: Request) -> HTMLResponse | RedirectResponse:
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse(url="/", status_code=303)
+    return HTMLResponse(
+        page_template(
+            "Panel Submission Portal",
+            """
+            <div class="header">Submit Marker Panel</div>
+            <div class="content">
+              <p class="muted">Upload a CSV file with marker panel data.</p>
+              <p>
+                Need an example file?
+                <a class="link" style="margin-top:0" href="/marker-template.csv" download>Download sample CSV</a>
+              </p>
+              <form method="post" action="/marker-submission/validate" enctype="multipart/form-data">
+                <label for="marker_file">Marker CSV file</label>
+                <input id="marker_file" name="marker_file" type="file" accept=".csv,text/csv" required />
+                <button type="submit">Validate File</button>
+              </form>
+            </div>
+            """,
+        )
+    )
+
+
+@app.post("/marker-submission/validate", response_class=HTMLResponse)
+async def validate_marker_file(
+    request: Request,
+    marker_file: UploadFile = File(...),
+) -> HTMLResponse | RedirectResponse:
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse(url="/", status_code=303)
+
+    file_bytes = await marker_file.read()
+    try:
+        decoded = file_bytes.decode("utf-8-sig")
+        reader = csv.reader(io.StringIO(decoded))
+        header = next(reader)
+    except Exception:
+        return HTMLResponse(
+            page_template(
+                "Validation Result",
+                """
+                <div class="header">File Validation Output</div>
+                <div class="content">
+                  <div class="error">Could not parse the uploaded file as CSV.</div>
+                  <a class="link" href="/marker-submission">Back to upload</a>
+                </div>
+                """,
+            ),
+            status_code=400,
+        )
+
+    normalized_header = {column.strip() for column in header}
+    missing = sorted(REQUIRED_MARKER_COLUMNS - normalized_header)
+    if missing:
+        missing_items = "".join(f"<li>{html.escape(column)}</li>" for column in missing)
+        return HTMLResponse(
+            page_template(
+                "Validation Result",
+                f"""
+                <div class="header">File Validation Output</div>
+                <div class="content">
+                  <div class="error">Missing required columns.</div>
+                  <h3>Missing Columns</h3>
+                  <ul>{missing_items}</ul>
+                  <h3>Detected Columns</h3>
+                  <p>{html.escape(', '.join(header))}</p>
+                  <a class="link" href="/marker-submission">Back to upload</a>
+                </div>
+                """,
+            ),
+            status_code=400,
+        )
+
+    file_b64 = base64.b64encode(file_bytes).decode("utf-8")
+    return HTMLResponse(
+        page_template(
+            "Submission Contacts",
+            f"""
+            <div class="header">Submission Contacts</div>
+            <div class="content">
+              <form method="post" action="/marker-submission/submit">
+                <input type="hidden" name="file_name" value="{html.escape(marker_file.filename or 'marker_panel.csv')}" />
+                <input type="hidden" name="file_b64" value="{html.escape(file_b64)}" />
+
+                <label>Project Coordinator(s)</label>
+                <div class="row">
+                  <input name="project_coordinator_name" type="text" placeholder="Name" required />
+                  <input name="project_coordinator_email" type="email" placeholder="Email" required />
+                </div>
+
+                <label>Marker Design Contact(s)</label>
+                <div class="row">
+                  <input name="marker_design_contact_name" type="text" placeholder="Name" required />
+                  <input name="marker_design_contact_email" type="email" placeholder="Email" required />
+                </div>
+
+                <label>Contact(s) for receiving product name and custom code</label>
+                <div class="row">
+                  <input name="product_contact_name" type="text" placeholder="Name" required />
+                  <input name="product_contact_email" type="email" placeholder="Email" required />
+                </div>
+
+                <label>Contact(s) for the TG</label>
+                <div class="row">
+                  <input name="tg_contact_name" type="text" placeholder="Name" required />
+                  <input name="tg_contact_email" type="email" placeholder="Email" required />
+                </div>
+
+                <button type="submit">Submit</button>
+              </form>
+            </div>
+            """,
+        )
+    )
+
+
+@app.post("/marker-submission/submit")
+def submit_marker_panel(
+    request: Request,
+    file_name: str = Form(...),
+    file_b64: str = Form(...),
+    project_coordinator_name: str = Form(...),
+    project_coordinator_email: str = Form(...),
+    marker_design_contact_name: str = Form(...),
+    marker_design_contact_email: str = Form(...),
+    product_contact_name: str = Form(...),
+    product_contact_email: str = Form(...),
+    tg_contact_name: str = Form(...),
+    tg_contact_email: str = Form(...),
+) -> RedirectResponse:
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse(url="/", status_code=303)
+
+    submission = Submission(
+        file_name=file_name,
+        file_blob=base64.b64decode(file_b64.encode("utf-8")),
+        project_coordinator_name=project_coordinator_name.strip(),
+        project_coordinator_email=project_coordinator_email.strip(),
+        marker_design_contact_name=marker_design_contact_name.strip(),
+        marker_design_contact_email=marker_design_contact_email.strip(),
+        product_contact_name=product_contact_name.strip(),
+        product_contact_email=product_contact_email.strip(),
+        tg_contact_name=tg_contact_name.strip(),
+        tg_contact_email=tg_contact_email.strip(),
+    )
+    with SessionLocal() as db:
+        db.add(submission)
+        db.commit()
+
+    return RedirectResponse(url="/?submission=success", status_code=303)
 
 
 @app.post("/login")
