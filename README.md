@@ -45,6 +45,7 @@ export SMTP_USER='smtp-user'
 export SMTP_PASSWORD='smtp-password'
 export SMTP_FROM='no-reply@example.com'
 export SMTP_USE_TLS='true'
+export EMAIL_VERBOSE='true'
 ```
 
 Example `.env`:
@@ -61,6 +62,7 @@ SMTP_USER=smtp-user
 SMTP_PASSWORD=smtp-password
 SMTP_FROM=no-reply@example.com
 SMTP_USE_TLS=true
+EMAIL_VERBOSE=true
 ```
 
 
