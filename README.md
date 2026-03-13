@@ -46,6 +46,8 @@ export SMTP_PASSWORD='smtp-password'
 export SMTP_FROM='no-reply@example.com'
 export SMTP_USE_TLS='true'
 export EMAIL_VERBOSE='true'
+export SUBMISSION_WORKING_DIR='submission_checking_runs'
+export SUBMISSION_CHECKER_IMAGE='diversityarraystechnology/submission_checking'
 ```
 
 Example `.env`:
@@ -63,6 +65,8 @@ SMTP_PASSWORD=smtp-password
 SMTP_FROM=no-reply@example.com
 SMTP_USE_TLS=true
 EMAIL_VERBOSE=true
+SUBMISSION_WORKING_DIR=submission_checking_runs
+SUBMISSION_CHECKER_IMAGE=diversityarraystechnology/submission_checking
 ```
 
 
@@ -70,6 +74,8 @@ EMAIL_VERBOSE=true
 - Open `/admin` and log in with `PANEL_ADMIN` / `PANEL_ADMIN_PW`.
 - Use the **Subscribers** button in the admin page to manage notification recipients.
 - When a marker panel is submitted, the app sends an email to all subscribers with a direct link to that submission in the admin view.
+- Submission checking is started in a background Docker container; stdout/stderr are captured to `docker.log` inside each submission output folder.
+- The submission detail page shows checker state (running container in yellow, failure with ❌ icon), links to output artifacts, and a **Re-run checker** button that wipes previous files.
 - If your SMTP relay on port 25 does not use STARTTLS, set `SMTP_USE_TLS=false`.
 
 ## 3) Run app

@@ -5,14 +5,18 @@ import hmac
 import io
 import os
 import secrets
+import shutil
+import subprocess
+import threading
 from datetime import datetime
 from typing import Generator
+from pathlib import Path
 from urllib.parse import quote
 import html
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import DateTime, ForeignKey, LargeBinary, String, create_engine, select
+from sqlalchemy import DateTime, ForeignKey, Integer, LargeBinary, String, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 
@@ -54,6 +58,8 @@ class Submission(Base):
     product_contact_email: Mapped[str] = mapped_column(String(255), nullable=False)
     tg_contact_name: Mapped[str] = mapped_column(String(255), nullable=False)
     tg_contact_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    checker_container_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    checker_exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class Subscriber(Base):
@@ -89,6 +95,8 @@ SECRET_KEY = os.getenv("APP_SECRET_KEY", "change-this-in-production")
 PANEL_ADMIN = os.getenv("PANEL_ADMIN", "admin")
 PANEL_ADMIN_PW = os.getenv("PANEL_ADMIN_PW", "password")
 APP_BASE_URL = os.getenv("APP_BASE_URL", "http://127.0.0.1:8000")
+SUBMISSION_WORKING_DIR = os.getenv("SUBMISSION_WORKING_DIR", "submission_checking_runs")
+SUBMISSION_CHECKER_IMAGE = os.getenv("SUBMISSION_CHECKER_IMAGE", "diversityarraystechnology/submission_checking")
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
@@ -114,6 +122,125 @@ EXAMPLE_MARKER_FILE = """MarkerName,TargetSequence,ReferenceGenome,Chrom,ChromPo
 Chr01_20858452,GTTCTTTGGGTACTGTAGATCCAATCCATCACTGTTTTAAAAGGAGAATATTTCATTCATTGATGATATGCAGGAAGATGTGTTGGAAAGAGCCAAAAAAGCTAAGGAGAAAGCAGCACGGGAGGCCATGGAGGCACAAGGACTAATTCC[A/G]AAGTCTACTGTAGTAGATACACCAGCAACTGATAGTGTTGATTCTGTTACTGCATCATCAACGGTCAGTGAGATTAGTGCTGCAGATGCATCCTCATTGTCTAGTCCGACTACTCCCATGTCCCAGTCATATAGAGGTCCTGCTGATAAG,Castanea dentata v1.1,Chr01,20858452,72.74810491,[A/G],SNP,NO,0.350817236,7,
 Chr01_21504745,AGATTTTCACTTCCCGCAGCAGATAAGCCTTAGACAACGGTATGTTTATCCATACTATATGCACATCATAGATTTCTTTTCTATTTTTTTAGGTGGTGGAAAAATGGAATTAGCTATTATTTCACTTCTGGAACTGCATCTGCTGTCTAC[G/A]AAATCAGCTACTACCTCTAAACAGATTAATTATAGAAGATTGCGTTGAGTTAAATAGGTAATGATTTAGATTGTCTTAAGTTAATATGTAATGATTCAGTTTCTTTTGCTGCAGGTATGCATTGTTGGGTAACAGTTTAAGTATAGCAGT,Castanea dentata v1.1,Chr01,21504745,73.21579093,[G/A],SNP,NO,0.453194651,7,
 """
+
+
+def submission_output_dir(submission_id: int) -> Path:
+    return Path(SUBMISSION_WORKING_DIR) / str(submission_id) / "submission_checking_output"
+
+
+def submission_marker_file_path(submission_id: int) -> Path:
+    return Path(SUBMISSION_WORKING_DIR) / str(submission_id) / "submission.csv"
+
+
+def submission_log_path(submission_id: int) -> Path:
+    return submission_output_dir(submission_id) / "docker.log"
+
+
+def list_submission_output_files(submission_id: int) -> list[str]:
+    out_dir = submission_output_dir(submission_id)
+    if not out_dir.exists():
+        return []
+    files: list[str] = []
+    for root, _, names in os.walk(out_dir):
+        for name in names:
+            full_path = Path(root) / name
+            rel = full_path.relative_to(out_dir).as_posix()
+            files.append(rel)
+    return sorted(files)
+
+
+def run_submission_checker_in_background(submission_id: int) -> None:
+    marker_file = submission_marker_file_path(submission_id)
+    output_dir = submission_output_dir(submission_id)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    log_path = submission_log_path(submission_id)
+
+    docker_cmd = [
+        "docker",
+        "run",
+        "--rm",
+        "-d",
+        "-u",
+        f"{os.getuid()}:{os.getgid()}",
+        "-v",
+        f"{marker_file.resolve()}:/submission/submission.csv:ro",
+        "-v",
+        f"{output_dir.resolve()}:/output",
+        SUBMISSION_CHECKER_IMAGE,
+        "-s",
+        "/submission/submission.csv",
+        "-d",
+        "/output",
+    ]
+
+    container_id = None
+    with log_path.open("a", encoding="utf-8") as log_file:
+        log_file.write(f"\n=== Checker run started at {datetime.utcnow().isoformat()}Z ===\n")
+        log_file.write("Command: " + " ".join(docker_cmd) + "\n")
+        log_file.flush()
+        try:
+            start = subprocess.run(docker_cmd, capture_output=True, text=True, check=True)
+            container_id = start.stdout.strip()
+            log_file.write(f"Container ID: {container_id}\n")
+            log_file.flush()
+            with SessionLocal() as db:
+                submission = db.get(Submission, submission_id)
+                if submission:
+                    submission.checker_container_id = container_id
+                    submission.checker_exit_code = None
+                    db.commit()
+
+            logs_proc = subprocess.Popen(["docker", "logs", "-f", container_id], stdout=log_file, stderr=log_file)
+            wait_result = subprocess.run(["docker", "wait", container_id], capture_output=True, text=True, check=False)
+            if logs_proc.poll() is None:
+                logs_proc.wait(timeout=15)
+
+            exit_code = None
+            if wait_result.stdout.strip().isdigit():
+                exit_code = int(wait_result.stdout.strip())
+            else:
+                log_file.write(f"docker wait output: {wait_result.stdout}\n")
+                if wait_result.stderr:
+                    log_file.write(f"docker wait stderr: {wait_result.stderr}\n")
+
+            with SessionLocal() as db:
+                submission = db.get(Submission, submission_id)
+                if submission:
+                    submission.checker_exit_code = exit_code if exit_code is not None else 1
+                    submission.checker_container_id = None
+                    db.commit()
+
+            log_file.write(f"Exit code: {exit_code}\n")
+        except Exception as exc:
+            log_file.write(f"Checker launch failed: {exc}\n")
+            with SessionLocal() as db:
+                submission = db.get(Submission, submission_id)
+                if submission:
+                    submission.checker_exit_code = 1
+                    submission.checker_container_id = None
+                    db.commit()
+        finally:
+            log_file.write(f"=== Checker run finished at {datetime.utcnow().isoformat()}Z ===\n")
+
+
+def trigger_submission_checker(submission_id: int, marker_bytes: bytes, reset_output: bool = False) -> None:
+    marker_path = submission_marker_file_path(submission_id)
+    output_dir = submission_output_dir(submission_id)
+    marker_path.parent.mkdir(parents=True, exist_ok=True)
+    if reset_output and output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    marker_path.write_bytes(marker_bytes)
+
+    with SessionLocal() as db:
+        submission = db.get(Submission, submission_id)
+        if submission:
+            submission.checker_exit_code = None
+            submission.checker_container_id = "starting..."
+            db.commit()
+
+    worker = threading.Thread(target=run_submission_checker_in_background, args=(submission_id,), daemon=True)
+    worker.start()
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -603,6 +730,8 @@ def submit_marker_panel(
         db.refresh(submission)
         subscribers = db.scalars(select(Subscriber).order_by(Subscriber.email)).all()
 
+    trigger_submission_checker(submission.id, submission.file_blob)
+
     submission_url = f"{APP_BASE_URL.rstrip('/')}/admin/submissions/{quote(str(submission.id))}"
     recipient_emails = [subscriber.email for subscriber in subscribers]
     send_submission_notification(recipient_emails, submission.id, submission_url)
@@ -850,6 +979,28 @@ def admin_submission_detail(request: Request, submission_id: int) -> Response:
             status_code=404,
         )
 
+    if submission.checker_container_id:
+        checker_html = (
+            f'<p style="color:#a67700;font-weight:700;">Running container: {html.escape(submission.checker_container_id)}</p>'
+        )
+    elif submission.checker_exit_code is None:
+        checker_html = '<p class="muted">Checker has not run yet.</p>'
+    elif submission.checker_exit_code == 0:
+        checker_html = '<p style="color:#0f7a2a;font-weight:700;">✅ Checker completed successfully (exit code 0).</p>'
+    else:
+        checker_html = (
+            f'<p style="color:#a11717;font-weight:700;">❌ Checker failed (exit code {submission.checker_exit_code}).</p>'
+        )
+
+    output_files = list_submission_output_files(submission.id)
+    if output_files:
+        files_html = "<ul>" + "".join(
+            f'<li><a class="link" style="margin-top:0" href="/admin/submissions/{submission.id}/artifacts/{quote(path, safe="")}">{html.escape(path)}</a></li>'
+            for path in output_files
+        ) + "</ul>"
+    else:
+        files_html = '<p class="muted">No output files found yet.</p>'
+
     return HTMLResponse(
         page_template(
             f"Submission {submission.id}",
@@ -889,10 +1040,53 @@ def admin_submission_detail(request: Request, submission_id: int) -> Response:
                 <input type="text" value="{html.escape(submission.tg_contact_email)}" readonly />
               </form>
               <a class="link" href="/admin/submissions/{submission.id}/marker-file" download>Download marker file</a>
+              <h3 style="margin-top:22px;">Submission checker</h3>
+              {checker_html}
+              <form method="post" action="/admin/submissions/{submission.id}/rerun" style="margin-top:10px;">
+                <button type="submit">Re-run checker (wipe existing output)</button>
+              </form>
+              <h3 style="margin-top:22px;">Output files</h3>
+              {files_html}
             </div>
             """,
         )
     )
+
+
+@app.get("/admin/submissions/{submission_id}/artifacts/{artifact_path:path}")
+def admin_download_submission_artifact(request: Request, submission_id: int, artifact_path: str) -> Response:
+    if not require_admin(request):
+        return RedirectResponse(url="/admin", status_code=303)
+
+    base_dir = submission_output_dir(submission_id).resolve()
+    target = (base_dir / artifact_path).resolve()
+    if base_dir not in target.parents and target != base_dir:
+        return Response(status_code=400)
+    if not target.exists() or not target.is_file():
+        return Response(status_code=404)
+
+    media_type = "application/octet-stream"
+    if target.suffix.lower() in {".txt", ".log", ".csv"}:
+        media_type = "text/plain"
+    return Response(
+        content=target.read_bytes(),
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{target.name}"'},
+    )
+
+
+@app.post("/admin/submissions/{submission_id}/rerun")
+def admin_rerun_submission_checker(request: Request, submission_id: int) -> Response:
+    if not require_admin(request):
+        return RedirectResponse(url="/admin", status_code=303)
+
+    with SessionLocal() as db:
+        submission = db.get(Submission, submission_id)
+    if not submission:
+        return Response(status_code=404)
+
+    trigger_submission_checker(submission_id, submission.file_blob, reset_output=True)
+    return RedirectResponse(url=f"/admin/submissions/{submission_id}", status_code=303)
 
 
 @app.get("/admin/submissions/{submission_id}/marker-file")
