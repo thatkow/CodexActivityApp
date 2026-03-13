@@ -70,6 +70,7 @@ EMAIL_VERBOSE=true
 - Open `/admin` and log in with `PANEL_ADMIN` / `PANEL_ADMIN_PW`.
 - Use the **Subscribers** button in the admin page to manage notification recipients.
 - When a marker panel is submitted, the app sends an email to all subscribers with a direct link to that submission in the admin view.
+- If your SMTP relay on port 25 does not use STARTTLS, set `SMTP_USE_TLS=false`.
 
 ## 3) Run app
 

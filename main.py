@@ -15,7 +15,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import DateTime, ForeignKey, LargeBinary, String, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
-from emails import send_submission_notification
 
 
 class Base(DeclarativeBase):
@@ -79,6 +78,8 @@ def load_dotenv(path: str = ".env") -> None:
 
 
 load_dotenv()
+
+from emails import send_submission_notification
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
