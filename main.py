@@ -282,7 +282,7 @@ def home(request: Request) -> HTMLResponse:
         )
 
 
-@app.post("/login")
+@app.post("/login", response_model=None)
 def login(email: str = Form(...), password: str = Form(...), organisation_id: int = Form(...)) -> HTMLResponse | RedirectResponse:
     with SessionLocal() as db:
         orgs = db.scalars(select(Organisation).order_by(Organisation.name)).all()
@@ -306,7 +306,7 @@ def register_page() -> HTMLResponse:
         return HTMLResponse(register_form(options))
 
 
-@app.post("/register")
+@app.post("/register", response_model=None)
 def register(
     email: str = Form(...),
     password: str = Form(...),
