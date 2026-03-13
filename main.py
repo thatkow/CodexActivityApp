@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from passlib.context import CryptContext
 from sqlalchemy import ForeignKey, String, create_engine, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
 
 
@@ -39,7 +39,7 @@ SESSION_SECRET = os.getenv("SESSION_SECRET", "change-me-in-production")
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(engine, expire_on_commit=False)
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
 
 app = FastAPI(title="Codex Activity App")
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
@@ -52,6 +52,17 @@ def reset_database() -> None:
 
 def ensure_database() -> None:
     Base.metadata.create_all(engine)
+
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def verify_password(password: str, hashed_password: str) -> bool:
+    try:
+        return pwd_context.verify(password, hashed_password)
+    except ValueError:
+        return False
 
 
 def render_shell(title: str, body: str) -> str:
@@ -257,7 +268,7 @@ def login(request: Request, organisation_id: int = Form(...), email: str = Form(
             .where(User.email == email.strip().lower())
             .where(User.organisation_id == organisation_id)
         )
-        if not user or not pwd_context.verify(password, user.hashed_pw):
+        if not user or not verify_password(password, user.hashed_pw):
             orgs = db.scalars(select(Organisation).order_by(Organisation.name)).all()
             return HTMLResponse(login_page(orgs, "Invalid credentials for selected organisation.", email, str(organisation_id)), status_code=400)
 
@@ -301,7 +312,7 @@ def signup(
             orgs = db.scalars(select(Organisation).order_by(Organisation.name)).all()
             return HTMLResponse(signup_page(orgs, "Select an organisation or create a new one.", normal_email), status_code=400)
 
-        user = User(email=normal_email, hashed_pw=pwd_context.hash(password), organisation_id=org.id)
+        user = User(email=normal_email, hashed_pw=hash_password(password), organisation_id=org.id)
         db.add(user)
         try:
             db.commit()

@@ -56,3 +56,7 @@ chmod +x run_app.sh
 4. launches uvicorn.
 
 > Warning: schema recreation deletes existing data.
+
+## Password hashing note
+
+The app uses Passlib's `bcrypt_sha256` scheme for password hashes, which avoids bcrypt's 72-byte input limit while still using bcrypt-based storage.
