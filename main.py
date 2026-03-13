@@ -1,13 +1,15 @@
+import csv
 import hashlib
 import hmac
+import io
 import os
 import secrets
-from typing import Optional
+from datetime import datetime, timezone
 
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import ForeignKey, String, create_engine, select
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
+from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from sqlalchemy import DateTime, ForeignKey, LargeBinary, String, create_engine, select
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
 
 DATABASE_URL = os.getenv(
@@ -16,6 +18,26 @@ DATABASE_URL = os.getenv(
 )
 SESSION_SECRET = os.getenv("SESSION_SECRET", "change-me-in-production")
 PBKDF2_ITERATIONS = int(os.getenv("PBKDF2_ITERATIONS", "260000"))
+
+REQUIRED_MARKER_COLUMNS = {
+    "MarkerName",
+    "TargetSequence",
+    "ReferenceGenome",
+    "Chrom",
+    "ChromPosPhysical",
+    "ChromPosGenetic",
+    "VariantAllelesDef",
+    "MarkerType",
+    "EssentialMarker",
+    "MinorAlleleFrequency",
+    "Quality",
+    "Comments",
+}
+
+SAMPLE_MARKER_FILE = """MarkerName\tTargetSequence\tReferenceGenome\tChrom\tChromPosPhysical\tChromPosGenetic\tVariantAllelesDef\tMarkerType\tEssentialMarker\tMinorAlleleFrequency\tQuality\tComments
+Chr01_20858452\tGTTCTTTGGGTACTGTAGATCCAATCCATCACTGTTTTAAAAGGAGAATATTTCATTCATTGATGATATGCAGGAAGATGTGTTGGAAAGAGCCAAAAAAGCTAAGGAGAAAGCAGCACGGGAGGCCATGGAGGCACAAGGACTAATTCC[A/G]AAGTCTACTGTAGTAGATACACCAGCAACTGATAGTGTTGATTCTGTTACTGCATCATCAACGGTCAGTGAGATTAGTGCTGCAGATGCATCCTCATTGTCTAGTCCGACTACTCCCATGTCCCAGTCATATAGAGGTCCTGCTGATAAG\tCastanea dentata v1.1\tChr01\t20858452\t72.74810491\t[A/G]\tSNP\tNO\t0.350817236\t7\t
+Chr01_21504745\tAGATTTTCACTTCCCGCAGCAGATAAGCCTTAGACAACGGTATGTTTATCCATACTATATGCACATCATAGATTTCTTTTCTATTTTTTTAGGTGGTGGAAAAATGGAATTAGCTATTATTTCACTTCTGGAACTGCATCTGCTGTCTAC[G/A]AAATCAGCTACTACCTCTAAACAGATTAATTATAGAAGATTGCGTTGAGTTAAATAGGTAATGATTTAGATTGTCTTAAGTTAATATGTAATGATTCAGTTTCTTTTGCTGCAGGTATGCATTGTTGGGTAACAGTTTAAGTATAGCAGT\tCastanea dentata v1.1\tChr01\t21504745\t73.21579093\t[G/A]\tSNP\tNO\t0.453194651\t7\t
+"""
 
 
 class Base(DeclarativeBase):
@@ -40,11 +62,32 @@ class User(Base):
     organisation: Mapped[Organisation] = relationship(back_populates="members")
 
 
+class Submission(Base):
+    __tablename__ = "submissions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    organisation_id: Mapped[int] = mapped_column(ForeignKey("organisations.id"), index=True)
+    file_blob: Mapped[bytes] = mapped_column(LargeBinary)
+    original_filename: Mapped[str] = mapped_column(String(255))
+    date_submitted: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    project_coordinator_name: Mapped[str] = mapped_column(String(255))
+    project_coordinator_email: Mapped[str] = mapped_column(String(255))
+    marker_design_contact_name: Mapped[str] = mapped_column(String(255))
+    marker_design_contact_email: Mapped[str] = mapped_column(String(255))
+    receiving_contact_name: Mapped[str] = mapped_column(String(255))
+    receiving_contact_email: Mapped[str] = mapped_column(String(255))
+    tg_contact_name: Mapped[str] = mapped_column(String(255))
+    tg_contact_email: Mapped[str] = mapped_column(String(255))
+
+
 engine = create_engine(DATABASE_URL, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)
 
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
+app.state.upload_cache = {}
 
 
 def init_database(reset: bool = False) -> None:
@@ -90,7 +133,7 @@ def html_page(body: str, title: str = "Codex Activity App") -> str:
           }}
 
           .shell {{
-            max-width: 900px;
+            max-width: 960px;
             margin: 2.5rem auto;
             padding: 0 1rem;
           }}
@@ -125,6 +168,20 @@ def html_page(body: str, title: str = "Codex Activity App") -> str:
             margin-top: 1rem;
           }}
 
+          .contact-grid {{
+            display: grid;
+            grid-template-columns: 2fr 2fr;
+            gap: 0.5rem 0.75rem;
+            align-items: center;
+            margin-bottom: 1rem;
+          }}
+
+          .contact-label {{
+            grid-column: 1 / -1;
+            font-weight: 600;
+            margin-top: 0.5rem;
+          }}
+
           input, select, button {{
             font: inherit;
             border-radius: 8px;
@@ -138,9 +195,20 @@ def html_page(body: str, title: str = "Codex Activity App") -> str:
             color: white;
             cursor: pointer;
             font-weight: 600;
+            text-decoration: none;
+            display: inline-block;
           }}
 
-          button:hover {{ background: #0d4d8f; }}
+          .button-link {{
+            text-decoration: none;
+            border-radius: 8px;
+            background: #0b3b6d;
+            color: white;
+            padding: 0.65rem 0.75rem;
+            font-weight: 600;
+          }}
+
+          button:hover, .button-link:hover {{ background: #0d4d8f; }}
 
           .logout {{
             background: #dc2626;
@@ -157,6 +225,16 @@ def html_page(body: str, title: str = "Codex Activity App") -> str:
             border-radius: 8px;
           }}
 
+          .success {{
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #86efac;
+            padding: 0.8rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            font-weight: 600;
+          }}
+
           .row {{
             display: grid;
             grid-template-columns: 2fr 1fr;
@@ -170,6 +248,15 @@ def html_page(body: str, title: str = "Codex Activity App") -> str:
             padding: 1rem;
           }}
 
+          code, pre {{
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            display: block;
+            padding: 0.75rem;
+            overflow-x: auto;
+          }}
+
           a {{
             color: #0d4d8f;
             font-weight: 600;
@@ -178,6 +265,7 @@ def html_page(body: str, title: str = "Codex Activity App") -> str:
 
           @media (max-width: 760px) {{
             .row {{ grid-template-columns: 1fr; }}
+            .contact-grid {{ grid-template-columns: 1fr; }}
           }}
         </style>
       </head>
@@ -188,7 +276,7 @@ def html_page(body: str, title: str = "Codex Activity App") -> str:
     """
 
 
-def organisation_options(selected: Optional[str] = None) -> str:
+def organisation_options(selected: str = "") -> str:
     with SessionLocal() as db:
         orgs = db.scalars(select(Organisation).order_by(Organisation.name)).all()
     options = []
@@ -198,29 +286,45 @@ def organisation_options(selected: Optional[str] = None) -> str:
     return "\n".join(options)
 
 
+def require_login(request: Request) -> bool:
+    return bool(request.session.get("user_id"))
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     init_database(reset=False)
 
 
+@app.get("/sample-marker-file")
+def sample_marker_file() -> PlainTextResponse:
+    headers = {"Content-Disposition": 'inline; filename="sample_marker_panel.tsv"'}
+    return PlainTextResponse(SAMPLE_MARKER_FILE, headers=headers)
+
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request) -> HTMLResponse:
-    user_id = request.session.get("user_id")
-    if not user_id:
+    if not require_login(request):
         return RedirectResponse(url="/login", status_code=303)
 
     org_id = request.session["org_id"]
+    success_msg = ""
+    if request.session.pop("submission_success", None):
+        success_msg = "<div class=\"success\">Submission Successful! We'll get back to you in a few days.</div>"
+
     with SessionLocal() as db:
         members = db.scalars(select(User).where(User.organisation_id == org_id).order_by(User.email)).all()
 
     body = f"""
       <section class=\"card\">
-        <h1>Organisation: {request.session['org_name']}</h1>
+        <h1>Panel Submission Portal</h1>
+        {success_msg}
+        <p><strong>Organisation: {request.session['org_name']}</strong></p>
         <p><strong>Welcome {request.session['email']}</strong></p>
         <div class=\"row\">
           <div>
             <h2>Dashboard</h2>
             <p>You are logged in to your organisation workspace.</p>
+            <a class=\"button-link\" href=\"/submit-panel\">Submit Marker Panel</a>
           </div>
           <aside class=\"members\">
             <h2>Members</h2>
@@ -234,7 +338,138 @@ def home(request: Request) -> HTMLResponse:
         </form>
       </section>
     """
-    return HTMLResponse(html_page(body, title="Organisation Dashboard"))
+    return HTMLResponse(html_page(body, title="Panel Submission Portal"))
+
+
+@app.get("/submit-panel", response_class=HTMLResponse)
+def submit_panel_form(request: Request) -> HTMLResponse:
+    if not require_login(request):
+        return RedirectResponse(url="/login", status_code=303)
+
+    body = """
+      <section class=\"card\">
+        <h1>Submit Marker Panel</h1>
+        <p>Upload a tab-delimited marker panel file. Download an inline sample here:
+        <a href=\"/sample-marker-file\">sample marker file</a></p>
+        <form class=\"form-grid\" method=\"post\" action=\"/submit-panel/validate\" enctype=\"multipart/form-data\">
+          <label>Marker panel file (.tsv/.txt)</label>
+          <input type=\"file\" name=\"panel_file\" required />
+          <button type=\"submit\">Validate File</button>
+        </form>
+        <p><a href=\"/\">Back to dashboard</a></p>
+      </section>
+    """
+    return HTMLResponse(html_page(body, title="Submit Marker Panel"))
+
+
+@app.post("/submit-panel/validate", response_class=HTMLResponse)
+async def validate_panel_file(request: Request, panel_file: UploadFile = File(...)) -> HTMLResponse:
+    if not require_login(request):
+        return RedirectResponse(url="/login", status_code=303)
+
+    file_bytes = await panel_file.read()
+    text = file_bytes.decode("utf-8-sig", errors="replace")
+    reader = csv.DictReader(io.StringIO(text), delimiter="\t")
+    incoming_columns = set(reader.fieldnames or [])
+    missing_columns = sorted(REQUIRED_MARKER_COLUMNS - incoming_columns)
+
+    if missing_columns:
+        body = f"""
+          <section class=\"card\">
+            <h1>File Validation Result</h1>
+            <p class=\"error\">Missing required columns.</p>
+            <pre>{chr(10).join(missing_columns)}</pre>
+            <p><a href=\"/submit-panel\">Try another file</a></p>
+          </section>
+        """
+        return HTMLResponse(html_page(body, title="Validation Failed"))
+
+    token = secrets.token_urlsafe(24)
+    app.state.upload_cache[token] = {
+        "filename": panel_file.filename or "marker_panel.tsv",
+        "file_bytes": file_bytes,
+    }
+
+    body = f"""
+      <section class=\"card\">
+        <h1>Submission Details</h1>
+        <p>File validated successfully. Provide contact information below.</p>
+        <form class=\"form-grid\" method=\"post\" action=\"/submit-panel/finalize\">
+          <input type=\"hidden\" name=\"upload_token\" value=\"{token}\" />
+
+          <div class=\"contact-grid\">
+            <div class=\"contact-label\">Project Coordinator(s)</div>
+            <input type=\"text\" name=\"project_coordinator_name\" placeholder=\"Name\" required />
+            <input type=\"email\" name=\"project_coordinator_email\" placeholder=\"Email\" required />
+
+            <div class=\"contact-label\">Marker Design Contact(s)</div>
+            <input type=\"text\" name=\"marker_design_contact_name\" placeholder=\"Name\" required />
+            <input type=\"email\" name=\"marker_design_contact_email\" placeholder=\"Email\" required />
+
+            <div class=\"contact-label\">Contact(s) for receiving product name and custom code</div>
+            <input type=\"text\" name=\"receiving_contact_name\" placeholder=\"Name\" required />
+            <input type=\"email\" name=\"receiving_contact_email\" placeholder=\"Email\" required />
+
+            <div class=\"contact-label\">Contact(s) for the TG</div>
+            <input type=\"text\" name=\"tg_contact_name\" placeholder=\"Name\" required />
+            <input type=\"email\" name=\"tg_contact_email\" placeholder=\"Email\" required />
+          </div>
+
+          <button type=\"submit\">Submit</button>
+        </form>
+      </section>
+    """
+    return HTMLResponse(html_page(body, title="Submission Details"))
+
+
+@app.post("/submit-panel/finalize")
+def finalize_submission(
+    request: Request,
+    upload_token: str = Form(...),
+    project_coordinator_name: str = Form(...),
+    project_coordinator_email: str = Form(...),
+    marker_design_contact_name: str = Form(...),
+    marker_design_contact_email: str = Form(...),
+    receiving_contact_name: str = Form(...),
+    receiving_contact_email: str = Form(...),
+    tg_contact_name: str = Form(...),
+    tg_contact_email: str = Form(...),
+) -> RedirectResponse:
+    if not require_login(request):
+        return RedirectResponse(url="/login", status_code=303)
+
+    payload = app.state.upload_cache.pop(upload_token, None)
+    if payload is None:
+        body = """
+          <section class=\"card\">
+            <h1>Submission Error</h1>
+            <p class=\"error\">Upload token expired or invalid. Please upload your file again.</p>
+            <p><a href=\"/submit-panel\">Back to Submit Marker Panel</a></p>
+          </section>
+        """
+        return HTMLResponse(html_page(body, title="Submission Error"), status_code=400)
+
+    with SessionLocal() as db:
+        submission = Submission(
+            user_id=request.session["user_id"],
+            organisation_id=request.session["org_id"],
+            file_blob=payload["file_bytes"],
+            original_filename=payload["filename"],
+            date_submitted=datetime.now(timezone.utc),
+            project_coordinator_name=project_coordinator_name,
+            project_coordinator_email=project_coordinator_email,
+            marker_design_contact_name=marker_design_contact_name,
+            marker_design_contact_email=marker_design_contact_email,
+            receiving_contact_name=receiving_contact_name,
+            receiving_contact_email=receiving_contact_email,
+            tg_contact_name=tg_contact_name,
+            tg_contact_email=tg_contact_email,
+        )
+        db.add(submission)
+        db.commit()
+
+    request.session["submission_success"] = True
+    return RedirectResponse(url="/", status_code=303)
 
 
 @app.get("/login", response_class=HTMLResponse)

@@ -1,13 +1,18 @@
 # CodexActivityApp
 
-A FastAPI business portal with login/registration by organisation, MySQL persistence, and an organisation member dashboard.
+A FastAPI business portal with login/registration by organisation, MySQL persistence, and marker panel submissions.
 
 ## Features
 - Login with **email + password + organisation**.
 - Create account flow with organisation selection or creation.
+- Marker panel submission workflow with:
+  - file upload + required-column validation (order independent)
+  - contact details form
+  - successful persistence + dashboard confirmation message
 - MySQL-backed entities:
   - `organisations(id, name)`
   - `users(id, email, hashed_pw, organisation_id)`
+  - `submissions(id, user_id, organisation_id, file_blob, original_filename, date_submitted, ...contact fields...)`
 - PBKDF2 password hashing using Python standard library (`hashlib.pbkdf2_hmac`).
 - Authenticated home page shows organisation and member list.
 - Logout support.
