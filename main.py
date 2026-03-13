@@ -409,7 +409,7 @@ def register(
         return response
 
 
-@app.get("/submit-marker-panel", response_class=HTMLResponse)
+@app.get("/submit-marker-panel", response_class=HTMLResponse, response_model=None)
 def submit_marker_panel_page(request: Request) -> HTMLResponse | RedirectResponse:
     if parse_user_id(request) is None:
         return RedirectResponse(url="/", status_code=303)
@@ -462,7 +462,7 @@ async def submit_marker_panel_upload(request: Request, marker_file: UploadFile =
     return RedirectResponse(url=f"/submit-marker-panel/contacts?token={quote(token)}", status_code=303)
 
 
-@app.get("/submit-marker-panel/contacts", response_class=HTMLResponse)
+@app.get("/submit-marker-panel/contacts", response_class=HTMLResponse, response_model=None)
 def submit_marker_panel_contacts(request: Request, token: str) -> HTMLResponse | RedirectResponse:
     user_id = parse_user_id(request)
     pending = PENDING_UPLOADS.get(token)
@@ -471,7 +471,7 @@ def submit_marker_panel_contacts(request: Request, token: str) -> HTMLResponse |
     return HTMLResponse(submission_contacts_form(token, str(pending["filename"])))
 
 
-@app.post("/submit-marker-panel/contacts")
+@app.post("/submit-marker-panel/contacts", response_model=None)
 def submit_marker_panel_finalize(
     request: Request,
     token: str = Form(...),
@@ -516,7 +516,7 @@ def submit_marker_panel_finalize(
     return RedirectResponse(url="/?submission_success=1", status_code=303)
 
 
-@app.get("/admin", response_class=HTMLResponse)
+@app.get("/admin", response_class=HTMLResponse, response_model=None)
 def admin_login_page(request: Request) -> HTMLResponse | RedirectResponse:
     if is_admin_logged_in(request):
         return RedirectResponse(url="/admin/submissions", status_code=303)
@@ -538,7 +538,7 @@ def admin_login_page(request: Request) -> HTMLResponse | RedirectResponse:
     )
 
 
-@app.post("/admin/login")
+@app.post("/admin/login", response_model=None)
 def admin_login(username: str = Form(...), password: str = Form(...)) -> HTMLResponse | RedirectResponse:
     if username != PANEL_ADMIN or password != PANEL_ADMIN_PW:
         return HTMLResponse(
@@ -557,7 +557,7 @@ def admin_login(username: str = Form(...), password: str = Form(...)) -> HTMLRes
     return response
 
 
-@app.get("/admin/submissions", response_class=HTMLResponse)
+@app.get("/admin/submissions", response_class=HTMLResponse, response_model=None)
 def admin_submissions(request: Request) -> HTMLResponse | RedirectResponse:
     if not is_admin_logged_in(request):
         return RedirectResponse(url="/admin", status_code=303)
@@ -585,7 +585,7 @@ def admin_submissions(request: Request) -> HTMLResponse | RedirectResponse:
     )
 
 
-@app.get("/admin/submissions/{submission_id}", response_class=HTMLResponse)
+@app.get("/admin/submissions/{submission_id}", response_class=HTMLResponse, response_model=None)
 def admin_submission_detail(request: Request, submission_id: int) -> HTMLResponse | RedirectResponse:
     if not is_admin_logged_in(request):
         return RedirectResponse(url="/admin", status_code=303)
@@ -614,7 +614,7 @@ def admin_submission_detail(request: Request, submission_id: int) -> HTMLRespons
         )
 
 
-@app.get("/admin/submissions/{submission_id}/file")
+@app.get("/admin/submissions/{submission_id}/file", response_model=None)
 def admin_submission_file(request: Request, submission_id: int) -> Response | RedirectResponse:
     if not is_admin_logged_in(request):
         return RedirectResponse(url="/admin", status_code=303)
