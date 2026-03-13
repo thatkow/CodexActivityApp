@@ -59,4 +59,4 @@ chmod +x run_app.sh
 
 ## Password hashing note
 
-The app uses Passlib's `bcrypt_sha256` scheme for password hashes, which avoids bcrypt's 72-byte input limit while still using bcrypt-based storage.
+The app uses salted `pbkdf2_sha256` password hashing from Python's standard library, which avoids bcrypt backend compatibility issues and supports long passwords safely.

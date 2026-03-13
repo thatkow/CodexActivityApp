@@ -1,9 +1,12 @@
+import base64
+import hashlib
+import hmac
 import os
+import secrets
 from html import escape
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from passlib.context import CryptContext
 from sqlalchemy import ForeignKey, String, create_engine, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
@@ -39,7 +42,6 @@ SESSION_SECRET = os.getenv("SESSION_SECRET", "change-me-in-production")
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(engine, expire_on_commit=False)
-pwd_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
 
 app = FastAPI(title="Codex Activity App")
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
@@ -55,14 +57,26 @@ def ensure_database() -> None:
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    salt = secrets.token_bytes(16)
+    derived_key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 390000)
+    encoded_salt = base64.b64encode(salt).decode("ascii")
+    encoded_key = base64.b64encode(derived_key).decode("ascii")
+    return f"pbkdf2_sha256$390000${encoded_salt}${encoded_key}"
 
 
 def verify_password(password: str, hashed_password: str) -> bool:
     try:
-        return pwd_context.verify(password, hashed_password)
-    except ValueError:
+        algorithm, rounds_text, encoded_salt, encoded_key = hashed_password.split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        rounds = int(rounds_text)
+        salt = base64.b64decode(encoded_salt.encode("ascii"))
+        expected_key = base64.b64decode(encoded_key.encode("ascii"))
+    except (ValueError, TypeError, UnicodeDecodeError):
         return False
+
+    derived_key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, rounds)
+    return hmac.compare_digest(derived_key, expected_key)
 
 
 def render_shell(title: str, body: str) -> str:
