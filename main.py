@@ -59,6 +59,8 @@ DATABASE_URL = os.getenv(
     "mysql+pymysql://codex_app:codex_app_password@127.0.0.1:3306/codex_activity_app",
 )
 SECRET_KEY = os.getenv("APP_SECRET_KEY", "change-this-in-production")
+PANEL_ADMIN = os.getenv("PANEL_ADMIN", "admin")
+PANEL_ADMIN_PW = os.getenv("PANEL_ADMIN_PW", "password")
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
@@ -126,6 +128,22 @@ def parse_session_value(cookie_value: str | None) -> int | None:
     if not hmac.compare_digest(sig, expected):
         return None
     return int(id_str)
+
+
+def sign_admin_value(username: str) -> str:
+    raw = username.encode("utf-8")
+    sig = hmac.new(SECRET_KEY.encode("utf-8"), raw, hashlib.sha256).hexdigest()
+    return f"{username}.{sig}"
+
+
+def is_valid_admin_cookie(cookie_value: str | None) -> bool:
+    if not cookie_value or "." not in cookie_value:
+        return False
+    username, sig = cookie_value.split(".", 1)
+    if username != PANEL_ADMIN:
+        return False
+    expected = hmac.new(SECRET_KEY.encode("utf-8"), username.encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(sig, expected)
 
 
 def page_template(title: str, body: str) -> str:
@@ -270,6 +288,33 @@ def register_form(org_options: str, error: str = "") -> str:
         </script>
         """,
     )
+
+
+def admin_login_form(error: str = "") -> str:
+    error_html = f'<div class="error">{error}</div>' if error else ""
+    return page_template(
+        "Admin Login",
+        f"""
+        <div class="header">Admin Login</div>
+        <div class="content">
+          {error_html}
+          <form method="post" action="/admin/login">
+            <label for="username">Username</label>
+            <input id="username" name="username" type="text" required />
+
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" required />
+
+            <button type="submit">Login</button>
+          </form>
+          <a class="link" href="/">Back to portal</a>
+        </div>
+        """,
+    )
+
+
+def require_admin(request: Request) -> bool:
+    return is_valid_admin_cookie(request.cookies.get("admin_session"))
 
 
 @app.on_event("startup")
@@ -579,3 +624,168 @@ def logout() -> RedirectResponse:
     response = RedirectResponse(url="/", status_code=303)
     response.delete_cookie("session")
     return response
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_home(request: Request) -> HTMLResponse:
+    if not require_admin(request):
+        return HTMLResponse(admin_login_form())
+
+    with SessionLocal() as db:
+        submissions = db.scalars(select(Submission).order_by(Submission.date_submitted.desc())).all()
+
+    rows = "".join(
+        (
+            f'<tr onclick="window.location=\'/admin/submissions/{submission.id}\'">'
+            f"<td>{submission.id}</td>"
+            f"<td>{html.escape(submission.file_name)}</td>"
+            f"<td>{html.escape(submission.project_coordinator_name)}</td>"
+            f"<td>{html.escape(submission.project_coordinator_email)}</td>"
+            f"<td>{submission.date_submitted.strftime('%Y-%m-%d %H:%M:%S')}</td>"
+            "</tr>"
+        )
+        for submission in submissions
+    )
+    if not rows:
+        rows = '<tr><td colspan="5" class="muted">No submissions yet.</td></tr>'
+
+    return HTMLResponse(
+        page_template(
+            "Admin Submissions",
+            f"""
+            <div class="header">Admin: Submissions</div>
+            <div class="content">
+              <div class="top-actions">
+                <h2 style="margin:0">Marker Panel Submissions</h2>
+                <form method="post" action="/admin/logout" style="margin:0">
+                  <button type="submit" class="logout">Logout</button>
+                </form>
+              </div>
+              <table style="width:100%; border-collapse: collapse;">
+                <thead>
+                  <tr>
+                    <th style="text-align:left; border-bottom:1px solid #c4cfdb; padding:8px;">ID</th>
+                    <th style="text-align:left; border-bottom:1px solid #c4cfdb; padding:8px;">File Name</th>
+                    <th style="text-align:left; border-bottom:1px solid #c4cfdb; padding:8px;">Coordinator</th>
+                    <th style="text-align:left; border-bottom:1px solid #c4cfdb; padding:8px;">Coordinator Email</th>
+                    <th style="text-align:left; border-bottom:1px solid #c4cfdb; padding:8px;">Date Submitted</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows}
+                </tbody>
+              </table>
+              <style>
+                tbody tr {{ cursor: pointer; }}
+                tbody tr:hover {{ background: #f3f7ff; }}
+                td {{ padding: 8px; border-bottom: 1px solid #e3e9f0; }}
+              </style>
+            </div>
+            """,
+        )
+    )
+
+
+@app.post("/admin/login")
+def admin_login(username: str = Form(...), password: str = Form(...)) -> Response:
+    if not (
+        hmac.compare_digest(username.strip(), PANEL_ADMIN)
+        and hmac.compare_digest(password, PANEL_ADMIN_PW)
+    ):
+        return HTMLResponse(admin_login_form("Invalid admin credentials."), status_code=401)
+
+    response = RedirectResponse(url="/admin", status_code=303)
+    response.set_cookie("admin_session", sign_admin_value(PANEL_ADMIN), httponly=True, samesite="lax")
+    return response
+
+
+@app.post("/admin/logout")
+def admin_logout() -> RedirectResponse:
+    response = RedirectResponse(url="/admin", status_code=303)
+    response.delete_cookie("admin_session")
+    return response
+
+
+@app.get("/admin/submissions/{submission_id}", response_class=HTMLResponse)
+def admin_submission_detail(request: Request, submission_id: int) -> Response:
+    if not require_admin(request):
+        return RedirectResponse(url="/admin", status_code=303)
+
+    with SessionLocal() as db:
+        submission = db.get(Submission, submission_id)
+
+    if not submission:
+        return HTMLResponse(
+            page_template(
+                "Not Found",
+                """
+                <div class="header">Submission Not Found</div>
+                <div class="content">
+                  <p class="error">The requested submission does not exist.</p>
+                  <a class="link" href="/admin">Back to submissions</a>
+                </div>
+                """,
+            ),
+            status_code=404,
+        )
+
+    return HTMLResponse(
+        page_template(
+            f"Submission {submission.id}",
+            f"""
+            <div class="header">Submission #{submission.id}</div>
+            <div class="content">
+              <a class="link" style="margin-top:0" href="/admin">← Back to submissions</a>
+              <form>
+                <label>File Name</label>
+                <input type="text" value="{html.escape(submission.file_name)}" readonly />
+
+                <label>Date Submitted</label>
+                <input type="text" value="{submission.date_submitted.strftime('%Y-%m-%d %H:%M:%S')}" readonly />
+
+                <label>Project Coordinator Name</label>
+                <input type="text" value="{html.escape(submission.project_coordinator_name)}" readonly />
+
+                <label>Project Coordinator Email</label>
+                <input type="text" value="{html.escape(submission.project_coordinator_email)}" readonly />
+
+                <label>Marker Design Contact Name</label>
+                <input type="text" value="{html.escape(submission.marker_design_contact_name)}" readonly />
+
+                <label>Marker Design Contact Email</label>
+                <input type="text" value="{html.escape(submission.marker_design_contact_email)}" readonly />
+
+                <label>Product Contact Name</label>
+                <input type="text" value="{html.escape(submission.product_contact_name)}" readonly />
+
+                <label>Product Contact Email</label>
+                <input type="text" value="{html.escape(submission.product_contact_email)}" readonly />
+
+                <label>TG Contact Name</label>
+                <input type="text" value="{html.escape(submission.tg_contact_name)}" readonly />
+
+                <label>TG Contact Email</label>
+                <input type="text" value="{html.escape(submission.tg_contact_email)}" readonly />
+              </form>
+              <a class="link" href="/admin/submissions/{submission.id}/marker-file" download>Download marker file</a>
+            </div>
+            """,
+        )
+    )
+
+
+@app.get("/admin/submissions/{submission_id}/marker-file")
+def admin_download_marker_file(request: Request, submission_id: int) -> Response:
+    if not require_admin(request):
+        return RedirectResponse(url="/admin", status_code=303)
+
+    with SessionLocal() as db:
+        submission = db.get(Submission, submission_id)
+    if not submission:
+        return Response(status_code=404)
+
+    return Response(
+        content=submission.file_blob,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{submission.file_name}"'},
+    )
