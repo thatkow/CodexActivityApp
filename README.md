@@ -29,12 +29,55 @@ FLUSH PRIVILEGES;
 
 ## 2) Configure app environment variables
 
-Optional (defaults are already set in `main.py`):
+Optional (defaults are already set in `main.py`). You can configure either with exported vars or a local `.env` file (auto-loaded on startup):
 
 ```bash
 export DATABASE_URL='mysql+pymysql://codex_app:codex_app_password@127.0.0.1:3306/codex_activity_app'
 export APP_SECRET_KEY='replace-with-a-long-random-secret'
+export PANEL_ADMIN='admin'
+export PANEL_ADMIN_PW='password'
+export APP_BASE_URL='http://127.0.0.1:8000'
+
+# SMTP settings for submission notifications
+export SMTP_HOST='smtp.example.com'
+export SMTP_PORT='587'
+export SMTP_USER='smtp-user'
+export SMTP_PASSWORD='smtp-password'
+export SMTP_FROM='no-reply@example.com'
+export SMTP_USE_TLS='true'
+export EMAIL_VERBOSE='true'
+export SUBMISSION_WORKING_DIR='submission_checking_runs'
+export SUBMISSION_CHECKER_IMAGE='diversityarraystechnology/submission_checking'
 ```
+
+Example `.env`:
+
+```env
+DATABASE_URL=mysql+pymysql://codex_app:codex_app_password@127.0.0.1:3306/codex_activity_app
+APP_SECRET_KEY=replace-with-a-long-random-secret
+PANEL_ADMIN=admin
+PANEL_ADMIN_PW=password
+APP_BASE_URL=http://127.0.0.1:8000
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=smtp-user
+SMTP_PASSWORD=smtp-password
+SMTP_FROM=no-reply@example.com
+SMTP_USE_TLS=true
+EMAIL_VERBOSE=true
+SUBMISSION_WORKING_DIR=submission_checking_runs
+SUBMISSION_CHECKER_IMAGE=diversityarraystechnology/submission_checking
+```
+
+
+## Admin panel + subscribers
+- Open `/admin` and log in with `PANEL_ADMIN` / `PANEL_ADMIN_PW`.
+- Use the **Subscribers** button in the admin page to manage notification recipients.
+- When a marker panel is submitted, the app sends an email to all subscribers with a direct link to that submission in the admin view.
+- The uploaded marker file is stored on disk as `$SUBMISSION_WORKING_DIR/<submission_id>/submission.csv` (not in the database blob), while the original filename is kept for downloads.
+- Submission checking is started in a background Docker container; stdout/stderr are captured to `docker.log` inside each submission output folder.
+- The submission detail page shows checker state (running container in yellow, failure with ❌ icon), links to output artifacts, and a **Re-run checker** button that wipes previous files.
+- If your SMTP relay on port 25 does not use STARTTLS, set `SMTP_USE_TLS=false`.
 
 ## 3) Run app
 
