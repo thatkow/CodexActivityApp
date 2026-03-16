@@ -3,6 +3,7 @@ import csv
 import hashlib
 import hmac
 import io
+import json
 import os
 import secrets
 import shutil
@@ -1058,6 +1059,117 @@ def admin_submission_detail(request: Request, submission_id: int) -> Response:
               <h3 style="margin-top:22px;">Output files</h3>
               {files_html}
             </div>
+            """,
+        )
+    )
+
+
+@app.get("/start_marker_submission/{submission_id}", response_class=HTMLResponse)
+def start_marker_submission(request: Request, submission_id: int) -> Response:
+    if not require_admin(request):
+        return RedirectResponse(url="/admin", status_code=303)
+
+    with SessionLocal() as db:
+        submission = db.get(Submission, submission_id)
+    if not submission:
+        return HTMLResponse(
+            page_template(
+                "Not Found",
+                """
+                <div class="header">Submission Not Found</div>
+                <div class="content">
+                  <p class="error">The requested submission does not exist.</p>
+                  <a class="link" href="/admin">Back to submissions</a>
+                </div>
+                """,
+            ),
+            status_code=404,
+        )
+
+    return HTMLResponse(
+        page_template(
+            f"Start Marker Submission {submission.id}",
+            f"""
+            <div class="header">Start Marker Submission #{submission.id}</div>
+            <div class="content">
+              <a class="link" style="margin-top:0" href="/admin/submissions/{submission.id}">← Back to submission</a>
+              <p class="muted">Add extra contact rows as needed. Additional rows include an <strong>✕</strong> delete icon.</p>
+
+              <form>
+                <label>Project Coordinator(s)</label>
+                <div id="project-coordinator-rows"></div>
+                <button type="button" onclick="addContactRow('project-coordinator-rows')">+ Add row</button>
+
+                <label>Marker Design Contact(s)</label>
+                <div id="marker-design-rows"></div>
+                <button type="button" onclick="addContactRow('marker-design-rows')">+ Add row</button>
+
+                <label>Contact(s) for receiving product name and custom code</label>
+                <div id="product-rows"></div>
+                <button type="button" onclick="addContactRow('product-rows')">+ Add row</button>
+
+                <label>Contact(s) for the TG</label>
+                <div id="tg-rows"></div>
+                <button type="button" onclick="addContactRow('tg-rows')">+ Add row</button>
+              </form>
+            </div>
+            <script>
+              function makeRow(nameValue = '', emailValue = '', removable = true) {{
+                const row = document.createElement('div');
+                row.style.display = 'grid';
+                row.style.gridTemplateColumns = '1fr 1fr auto';
+                row.style.gap = '10px';
+                row.style.marginBottom = '10px';
+
+                const nameInput = document.createElement('input');
+                nameInput.type = 'text';
+                nameInput.placeholder = 'Name';
+                nameInput.value = nameValue;
+
+                const emailInput = document.createElement('input');
+                emailInput.type = 'email';
+                emailInput.placeholder = 'Email';
+                emailInput.value = emailValue;
+
+                row.appendChild(nameInput);
+                row.appendChild(emailInput);
+
+                if (removable) {{
+                  const removeButton = document.createElement('button');
+                  removeButton.type = 'button';
+                  removeButton.textContent = '✕';
+                  removeButton.title = 'Delete row';
+                  removeButton.style.width = '42px';
+                  removeButton.style.marginTop = '0';
+                  removeButton.style.background = '#b42318';
+                  removeButton.onclick = () => row.remove();
+                  row.appendChild(removeButton);
+                }} else {{
+                  const spacer = document.createElement('div');
+                  row.appendChild(spacer);
+                }}
+
+                return row;
+              }}
+
+              function addContactRow(containerId) {{
+                const container = document.getElementById(containerId);
+                container.appendChild(makeRow('', '', true));
+              }}
+
+              document.getElementById('project-coordinator-rows').appendChild(
+                makeRow({json.dumps(submission.project_coordinator_name)}, {json.dumps(submission.project_coordinator_email)}, false)
+              );
+              document.getElementById('marker-design-rows').appendChild(
+                makeRow({json.dumps(submission.marker_design_contact_name)}, {json.dumps(submission.marker_design_contact_email)}, false)
+              );
+              document.getElementById('product-rows').appendChild(
+                makeRow({json.dumps(submission.product_contact_name)}, {json.dumps(submission.product_contact_email)}, false)
+              );
+              document.getElementById('tg-rows').appendChild(
+                makeRow({json.dumps(submission.tg_contact_name)}, {json.dumps(submission.tg_contact_email)}, false)
+              );
+            </script>
             """,
         )
     )
