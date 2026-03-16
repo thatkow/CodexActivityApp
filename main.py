@@ -830,6 +830,11 @@ def logout() -> RedirectResponse:
     return response
 
 
+@app.get("/submissions", response_class=HTMLResponse)
+def submissions_alias(request: Request) -> Response:
+    return admin_home(request)
+
+
 @app.get("/admin", response_class=HTMLResponse)
 def admin_home(request: Request) -> HTMLResponse:
     if not require_admin(request):
@@ -1111,6 +1116,17 @@ def start_marker_submission(request: Request, submission_id: int) -> Response:
                 <label>Contact(s) for the TG</label>
                 <div id="tg-rows"></div>
                 <button type="button" onclick="addContactRow('tg-rows')">+ Add row</button>
+
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:20px;">
+                  <div style="display:flex; gap:10px;">
+                    <a class="link" style="margin-top:0" href="/admin/submissions/{submission.id}">Back</a>
+                    <button type="button" style="margin-top:0; background:#6b7280; width:auto; padding:10px 16px;" onclick="window.location='/admin/submissions/{submission.id}'">Discard</button>
+                  </div>
+                  <div style="display:flex; gap:10px;">
+                    <button type="button" style="margin-top:0; width:auto; padding:10px 16px; background:#305ca8;" onclick="alert('Saved draft locally in this screen.');">Save</button>
+                    <button type="button" style="margin-top:0; width:auto; padding:10px 16px;" onclick="alert('Submission action is not wired on this page yet.');">Submit</button>
+                  </div>
+                </div>
               </form>
             </div>
             <script>
